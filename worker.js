@@ -131,9 +131,12 @@ export default {
       if (!Array.isArray(body.favorite_ride_ids)) {
         return json({ error: "bad_request", details: "missing favorite_ride_ids" }, 0, { status: 400, "x-request-id": requestId, ...CORS });
       }
+      if (body.favorite_ride_ids.length > 6) {
+        return json({ error: "bad_request", details: "too many favorite_ride_ids" }, 0, { status: 400, "x-request-id": requestId, ...CORS });
+      }
 
       const units = normUnits(body.units);
-      const favs = new Set(body.favorite_ride_ids.map(Number).filter(Number.isInteger).slice(0, 6));
+      const favs = new Set(body.favorite_ride_ids.map(Number).filter(Number.isInteger));
 
       // Try per-park summary cache (30 min TTL)
       let cacheWasHit = false;
@@ -149,10 +152,10 @@ export default {
         return json({ error: "upstream_error" }, 0, { status: 503, "x-request-id": requestId, ...CORS });
       }
 
-      // Filter rides to favorites
+      // Filter rides to favorites (empty favorites → empty rides)
       const rides = favs.size
         ? (payload.rides || []).filter(r => favs.has(Number(r.id)))
-        : payload.rides || [];
+        : [];
 
       return json({
         updated_at: payload.updated_at,
