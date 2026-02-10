@@ -15,6 +15,7 @@ Keep this section up to date as work lands so you can resume quickly in a new se
 - [x] Worker: refactor `POST /v1/summary` to per-park (sourced from `parks.json`) with a 30m Cache API entry per park+units and park-specific weather coords. (commit: `2b9b600`)
 - [x] Worker: enforce v1 favorite rules (`favorite_ride_ids` max 6; empty favorites → `rides: []`). (commit: `68b3833`)
 - [x] Worker: update `/v1/status` to report per-park summary cache health (park+units keys). (commit: `6589dbc`)
+- [x] Worker: remove dead region-based code paths (`REGIONS`, warm-cache/replay leftovers). (commit: `5381914`)
 - [x] Docs: make this plan internally consistent + executable. (commit: `df30b90`)
 
 **Next (recommended order):**
