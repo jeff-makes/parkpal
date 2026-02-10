@@ -108,84 +108,58 @@ export default {
       return json(payload, 60, { "x-request-id": requestId, ...CORS });
     }
 
-    // --- Main endpoint: summary
+    // --- Main endpoint: summary for one park
     // POST /v1/summary
-    // Body: { region?: "orlando"|"tokyo", units?: "imperial"|"metric", parks?: number[], favorite_ride_ids?: number[] }
+    // Body: { park: 274, units?: "metric"|"imperial", favorite_ride_ids: [123, 456, ...] }
     if (req.method === "POST" && url.pathname === "/v1/summary") {
       let body = {};
       try { body = await req.json(); }
       catch (_) {
-        return json({ error: "Invalid JSON body" }, 0, { status: 400, "x-request-id": requestId, ...CORS });
+        return json({ error: "bad_request", details: "invalid JSON" }, 0, { status: 400, "x-request-id": requestId, ...CORS });
       }
 
-      const region = normRegion(body.region);
+      const parkId = Number(body.park);
+      if (!body.park || !Number.isInteger(parkId)) {
+        return json({ error: "bad_request", details: "missing park" }, 0, { status: 400, "x-request-id": requestId, ...CORS });
+      }
+
+      const parkEntry = REGISTRY_PARKS.get(parkId);
+      if (!parkEntry) {
+        return json({ error: "bad_request", details: "unknown park" }, 0, { status: 400, "x-request-id": requestId, ...CORS });
+      }
+
+      if (!Array.isArray(body.favorite_ride_ids)) {
+        return json({ error: "bad_request", details: "missing favorite_ride_ids" }, 0, { status: 400, "x-request-id": requestId, ...CORS });
+      }
+
       const units = normUnits(body.units);
+      const favs = new Set(body.favorite_ride_ids.map(Number).filter(Number.isInteger).slice(0, 6));
 
-      const regionConfig = REGIONS[region];
-      const defaultParkIds = regionConfig.parks.map(p => p.id);
-      const parkIds = parseIds(body.parks, defaultParkIds, 8);
-      const favs = new Set(parseIds(body.favorite_ride_ids, [], 50));
-
-      // try cache first; if empty, fetch and populate
+      // Try per-park summary cache (30 min TTL)
       let cacheWasHit = false;
-      let payload = await cacheGetSummaryPayload(units, region);
+      let payload = await cacheGetParkSummary(parkId, units);
 
-      if (!payload) {
-        payload = await getOrFetchSummary(env, units, region, requestId, { forceRefresh: true });
-      } else {
+      if (payload) {
         cacheWasHit = true;
+      } else {
+        payload = await fetchParkSummary(env, parkId, parkEntry, units);
       }
 
-      // If somehow nothing, fail clearly
       if (!payload) {
-        return json(
-          { region, units, updated_at: new Date().toISOString(), weather: null, parks: [], errors: ["no_payload"] },
-          0,
-          { status: 503, "x-request-id": requestId, ...CORS }
-        );
+        return json({ error: "upstream_error" }, 0, { status: 503, "x-request-id": requestId, ...CORS });
       }
 
-      // If payload represents a total failure
-      if ((!payload.parks || payload.parks.length === 0) &&
-        (!payload.weather || payload.weather.temp === 0) &&
-        (payload.errors && payload.errors.length > 0)) {
-        return json(
-          { region, units, updated_at: new Date().toISOString(), weather: null, parks: [], errors: payload.errors },
-          0,
-          { status: 503, "x-request-id": requestId, ...CORS }
-        );
-      }
-
-      // filter parks/rides
-      // If cached payload looks incomplete for requested parks, refresh once.
-      if (cacheWasHit && payload && Array.isArray(payload.parks)) {
-        const needsRefresh = parkIds.some(pid => {
-          const park = payload.parks.find(p => Number(p.id) === pid);
-          return !park || !Array.isArray(park.rides) || park.rides.length === 0;
-        });
-        if (needsRefresh) {
-          cacheWasHit = false;
-          payload = await getOrFetchSummary(env, units, region, requestId, { forceRefresh: true });
-        }
-      }
-
-      let parks = payload.parks.filter(p => parkIds.includes(Number(p.id)));
-      if (favs.size) {
-        parks = parks
-          .map(p => ({
-            id: p.id, name: p.name,
-            rides: (p.rides || []).filter(r => favs.has(Number(r.id)))
-          }))
-          .filter(p => p.rides.length);
-      }
+      // Filter rides to favorites
+      const rides = favs.size
+        ? (payload.rides || []).filter(r => favs.has(Number(r.id)))
+        : payload.rides || [];
 
       return json({
-        region,
-        units,
         updated_at: payload.updated_at,
         server_time: new Date().toISOString(),
+        units,
+        park: { id: parkId, name: parkEntry.name, rides },
         weather: payload.weather,
-        parks,
         errors: payload.errors || [],
         source: cacheWasHit ? "cache" : "live"
       }, 60, {
@@ -320,6 +294,113 @@ async function fetchAndCacheRides(env, parkId, parkEntry) {
   } catch (_) {
     return null;
   }
+}
+
+function parkSummaryCacheKey(parkId, units) {
+  return `https://cache.parkpal.fun/${CACHE_VERSION}/summary?park=${parkId}&units=${encodeURIComponent(units)}`;
+}
+
+async function cacheGetParkSummary(parkId, units) {
+  const key = parkSummaryCacheKey(parkId, units);
+  const now = Date.now();
+
+  const mem = MEM_CACHE.get(key);
+  if (mem) {
+    if (mem.expiresAtMs > now) return mem.payload;
+    MEM_CACHE.delete(key);
+  }
+
+  const resp = await caches.default.match(new Request(key));
+  if (!resp) return null;
+  try {
+    const payload = await resp.json();
+    const updatedAtMs = parseUpdatedAtMs(payload);
+    if (!updatedAtMs) return null;
+    const expiresAtMs = updatedAtMs + CACHE_TTL_SECONDS * 1000;
+    if (expiresAtMs <= now) return null;
+    MEM_CACHE.set(key, { expiresAtMs, payload });
+    return payload;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function cachePutParkSummary(parkId, units, payload) {
+  const key = parkSummaryCacheKey(parkId, units);
+  MEM_CACHE.set(key, { expiresAtMs: Date.now() + CACHE_TTL_SECONDS * 1000, payload });
+  const resp = new Response(JSON.stringify(payload), {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": `public, max-age=${CACHE_TTL_SECONDS}`
+    }
+  });
+  await caches.default.put(new Request(key), resp);
+}
+
+// Fetch rides + weather for one park from upstream, normalize, and cache
+async function fetchParkSummary(env, parkId, parkEntry, units) {
+  const errors = [];
+
+  // Fetch rides from Queue-Times
+  let rides = [];
+  try {
+    const j = await fetchJSON(parkEntry.queue_times_url, { headers: { "User-Agent": "ParkPal/1.0" } }, env.PREFETCH_TIMEOUT_MS);
+    const byId = new Map();
+
+    if (j && Array.isArray(j.lands)) {
+      for (const land of j.lands) {
+        for (const ride of (land?.rides || [])) {
+          if (!ride || ride.id == null) continue;
+          byId.set(Number(ride.id), {
+            id: Number(ride.id),
+            name: ride.name || "Unknown Ride",
+            is_open: !!ride.is_open,
+            wait_time: Number(ride.wait_time ?? 0)
+          });
+        }
+      }
+    }
+    if (j && Array.isArray(j.rides)) {
+      for (const ride of j.rides) {
+        if (!ride || ride.id == null) continue;
+        const id = Number(ride.id);
+        if (!byId.has(id)) {
+          byId.set(id, {
+            id,
+            name: ride.name || "Unknown Ride",
+            is_open: !!ride.is_open,
+            wait_time: Number(ride.wait_time ?? 0)
+          });
+        }
+      }
+    }
+    rides = [...byId.values()];
+  } catch (e) {
+    errors.push(`park_${parkId}_${e?.status ? `HTTP_${e.status}` : (e?.message || "error")}`);
+  }
+
+  // Fetch weather using park-specific coords
+  let weather = { temp: 0, desc: "", sunrise: 0, sunset: 0 };
+  try {
+    const { lat, lon } = parkEntry.coords;
+    const w = await fetchJSON(
+      `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=${units}&appid=${env.OWM_API_KEY}`,
+      {},
+      env.PREFETCH_TIMEOUT_MS
+    );
+    weather = {
+      temp: Math.round(w?.main?.temp ?? 0),
+      desc: (w?.weather?.[0]?.description || "").toLowerCase(),
+      sunrise: w?.sys?.sunrise ?? 0,
+      sunset: w?.sys?.sunset ?? 0
+    };
+  } catch (e) {
+    errors.push(`weather_${e?.status ? `HTTP_${e.status}` : (e?.message || "error")}`);
+  }
+
+  const payload = { updated_at: new Date().toISOString(), rides, weather, errors };
+  try { await cachePutParkSummary(parkId, units, payload); } catch (_) { }
+  return payload;
 }
 
 function parseUpdatedAtMs(payload) {
