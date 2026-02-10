@@ -200,11 +200,13 @@ static String normResort(const String& r) {
     String s = r;
     s.toLowerCase();
     if (s == "tokyo" || s == "tdr") return "tokyo";
+    if (s == "california" || s == "dlr" || s == "disneyland") return "california";
     return "orlando";
 }
 
 static String regionForParkId(int parkId) {
     if (parkId == 274 || parkId == 275) return "tokyo";
+    if (parkId == 16 || parkId == 17) return "california";
     return "orlando";
 }
 
@@ -213,6 +215,8 @@ static String parkNameForId(int parkId) {
            (parkId == 5) ? "EPCOT" :
            (parkId == 7) ? "Hollywood Studios" :
            (parkId == 8) ? "Animal Kingdom" :
+           (parkId == 16) ? "Disneyland" :
+           (parkId == 17) ? "Disney California Adventure" :
            (parkId == 274) ? "Tokyo Disneyland" :
            (parkId == 275) ? "Tokyo DisneySea" :
            String("Park ") + parkId;
@@ -220,7 +224,9 @@ static String parkNameForId(int parkId) {
 
 static String inferTripNameFromParks(const String& resort, const int* parks, int parks_n) {
     if (parks_n == 1 && parks) return parkNameForId(parks[0]);
-    return (resort == "tokyo") ? "Tokyo Disney" : "Disney World";
+    if (resort == "tokyo") return "Tokyo Disney";
+    if (resort == "california") return "Disneyland";
+    return "Disney World";
 }
 
 String normalize(const String& in) {

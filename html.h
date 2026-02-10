@@ -768,6 +768,7 @@ static const char INDEX_HTML[] PROGMEM = R"html(
           <span class="label-text">Select your destination</span>
           <select id="resort-selector">
             <option value="orlando">Walt Disney World (Florida)</option>
+            <option value="california">Disneyland Resort (California)</option>
             <option value="tokyo">Tokyo Disney Resort (Japan)</option>
           </select>
         </label>
@@ -998,6 +999,16 @@ const RESORTS = {
       8: { name: "Animal Kingdom", abbr: "AK" }
     }
   },
+  california: {
+    name: "Disneyland Resort",
+    abbr: "DLR",
+    tz: "PST8PDT,M3.2.0/2,M11.1.0/2",
+    defaultUnits: "imperial",
+    parks: {
+      16: { name: "Disneyland", abbr: "DL" },
+      17: { name: "Disney California Adventure", abbr: "DCA" }
+    }
+  },
   tokyo: {
     name: "Tokyo Disney Resort",
     abbr: "TDR",
@@ -1205,7 +1216,9 @@ function inferDefaultTripName() {
   const parkNames = enabled.map(pid => resort.parks?.[pid]?.name).filter(Boolean);
 
   if (parkNames.length === 1) return parkNames[0];
-  return resortKey === 'tokyo' ? 'Tokyo Disney' : 'Disney World';
+  if (resortKey === 'tokyo') return 'Tokyo Disney';
+  if (resortKey === 'california') return 'Disneyland';
+  return 'Disney World';
 }
 
 function updateTripNamePlaceholder() {

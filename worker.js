@@ -1,5 +1,5 @@
 // ParkPal API – per-park data + edge cache (no DB needed)
-// Park registry sourced from parks.json (Orlando + Tokyo)
+// Park registry sourced from parks.json (Orlando + California + Tokyo)
 
 import parksRegistry from "./parks.json";
 

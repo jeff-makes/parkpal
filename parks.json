@@ -39,6 +39,28 @@
       ]
     },
     {
+      "id": "california",
+      "name": "California",
+      "parks": [
+        {
+          "id": 16,
+          "name": "Disneyland",
+          "provider": "queue_times",
+          "queue_times_url": "https://queue-times.com/parks/16/queue_times.json",
+          "coords": { "lat": 33.8104856, "lon": -117.9190001 },
+          "tz": "PST8PDT,M3.2.0/2,M11.1.0/2"
+        },
+        {
+          "id": 17,
+          "name": "Disney California Adventure",
+          "provider": "queue_times",
+          "queue_times_url": "https://queue-times.com/parks/17/queue_times.json",
+          "coords": { "lat": 33.8058755, "lon": -117.9194899 },
+          "tz": "PST8PDT,M3.2.0/2,M11.1.0/2"
+        }
+      ]
+    },
+    {
       "id": "tokyo",
       "name": "Tokyo",
       "parks": [
