@@ -61,7 +61,7 @@ export default {
       return json({ ok: true, time: new Date().toISOString() }, 0, { "x-request-id": requestId, ...CORS });
     }
 
-    // --- Cache status (no upstream calls) ---
+    // --- Cache status per park (no upstream calls) ---
     if (url.pathname === "/v1/status") {
       const now = Date.now();
       const describe = (p) => p ? {
@@ -71,13 +71,13 @@ export default {
         errors: Array.isArray(p.errors) ? p.errors : []
       } : { present: false };
 
-      const status = { now: new Date(now).toISOString(), regions: {} };
-      for (const region of Object.keys(REGIONS)) {
-        const imp = await cacheGetSummaryPayload("imperial", region);
-        const met = await cacheGetSummaryPayload("metric", region);
-        status.regions[region] = { imperial: describe(imp), metric: describe(met) };
+      const parks = {};
+      for (const [parkId] of REGISTRY_PARKS) {
+        const imp = await cacheGetParkSummary(parkId, "imperial");
+        const met = await cacheGetParkSummary(parkId, "metric");
+        parks[parkId] = { imperial: describe(imp), metric: describe(met) };
       }
-      return json(status, 0, { "x-request-id": requestId, ...CORS });
+      return json({ now: new Date(now).toISOString(), parks }, 0, { "x-request-id": requestId, ...CORS });
     }
 
     // --- Canonical ride list for one park
