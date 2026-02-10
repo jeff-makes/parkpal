@@ -14,21 +14,38 @@
 #include <Preferences.h>
 #include <ESPmDNS.h>
 #include <ESPAsyncWebServer.h>
+#include <DNSServer.h>
 #include <vector>
+#include <esp_system.h>
 
 // ---- WiFi & API ----
-// TODO: these will move to NVS provisioning in a future update
-const char* WIFI_SSID = "YOUR_WIFI_SSID";
-const char* WIFI_PASS = "YOUR_WIFI_PASSWORD";
-// Backend endpoints — set to your own Cloudflare Worker URL
-static const char* API_SUMMARY = "https://YOUR_WORKER.workers.dev/v1/summary";
-static const char* API_RIDES = "https://YOUR_WORKER.workers.dev/v1/rides";
+// Provisioned at runtime (AP captive portal). Stored in NVS (Preferences).
+static String WIFI_SSID;
+static String WIFI_PASS;
+static String API_BASE_URL; // e.g. https://your-worker.your-subdomain.workers.dev (no trailing slash)
+
+static String normApiBaseUrl(String s) {
+    s.trim();
+    while (s.endsWith("/")) s.remove(s.length() - 1);
+    // If a user pastes .../v1, accept it but normalize to base.
+    if (s.endsWith("/v1")) s = s.substring(0, s.length() - 3);
+    while (s.endsWith("/")) s.remove(s.length() - 1);
+    return s;
+}
+
+static inline String apiUrl(const char* path) {
+    // `path` should start with "/v1/..."
+    return API_BASE_URL + path;
+}
 const uint32_t REFRESH_MS = 1800000; // 30 min
 const uint32_t WIFI_RECONNECT_INTERVAL_MS = 30000; // Don't spam reconnect attempts
 const uint32_t WIFI_CONNECT_TIMEOUT_MS = 20000;
 const uint32_t HTTP_TIMEOUT_MS = 7000; // Bounds TLS handshake + request/response
 const uint32_t API_ERROR_RETRY_MS = 120000; // Retry sooner after transient API errors
 const uint8_t API_FAIL_STREAK_WIFI_RESET = 3;
+const uint32_t WIFI_AP_FALLBACK_AFTER_MS = 5UL * 60UL * 1000UL; // 5 min
+const uint32_t FACTORY_RESET_HOLD_MS = 8000;
+const int BOOT_PIN = 0; // usually GPIO0
 
 static int last_http_code = 0;
 
@@ -364,13 +381,52 @@ bool parseConfig(RuntimeConfig& out) {
 
 // -------------------- HTML UI --------------------
 #include "html.h"
+#include "setup_html.h"
+
+// -------------------- Provisioning / Captive Portal --------------------
+DNSServer dnsServer;
+bool in_setup_mode = false;
+String setup_ap_ssid;
+String setup_ap_pass;
+
+static void loadProvisioningKeys() {
+    prefs.begin("parkpal", true);
+    WIFI_SSID = prefs.getString("wifi_ssid", "");
+    WIFI_PASS = prefs.getString("wifi_pass", "");
+    API_BASE_URL = normApiBaseUrl(prefs.getString("api_base_url", ""));
+    prefs.end();
+}
+
+static void saveProvisioningKeys(const String& ssid, const String& pass, const String& baseUrl) {
+    prefs.begin("parkpal", false);
+    prefs.putString("wifi_ssid", ssid);
+    prefs.putString("wifi_pass", pass);
+    prefs.putString("api_base_url", normApiBaseUrl(baseUrl));
+    prefs.end();
+    loadProvisioningKeys();
+}
+
+static void wipeProvisioningKeys(bool wipeConfigJson) {
+    prefs.begin("parkpal", false);
+    prefs.remove("wifi_ssid");
+    prefs.remove("wifi_pass");
+    prefs.remove("api_base_url");
+    if (wipeConfigJson) prefs.remove("config_json");
+    prefs.end();
+    loadProvisioningKeys();
+}
+
+static bool isProvisioned() {
+    return WIFI_SSID.length() > 0 && API_BASE_URL.length() > 0;
+}
 
 // -------------------- Wi-Fi / NTP --------------------
 void connectWiFi() {
+    if (WIFI_SSID.length() == 0) return;
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
     WiFi.persistent(false);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
     unsigned long t0 = millis();
     while (WiFi.status() != WL_CONNECTED && (uint32_t)(millis() - t0) < WIFI_CONNECT_TIMEOUT_MS) delay(200);
 }
@@ -378,12 +434,13 @@ void connectWiFi() {
 bool ensureWiFiConnected(uint32_t timeoutMs = 0) {
     static unsigned long lastAttemptMs = 0;
     if (WiFi.status() == WL_CONNECTED) return true;
+    if (WIFI_SSID.length() == 0) return false;
 
     const unsigned long now = millis();
     if (lastAttemptMs == 0 || (uint32_t)(now - lastAttemptMs) >= WIFI_RECONNECT_INTERVAL_MS) {
         lastAttemptMs = now;
         WiFi.disconnect(false);
-        WiFi.begin(WIFI_SSID, WIFI_PASS);
+        WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
     }
 
     if (timeoutMs == 0) return false;
@@ -527,12 +584,19 @@ bool httpGetJson(const String& url, DynamicJsonDocument& outDoc) {
     return (deserializeJson(outDoc, payload) == DeserializationError::Ok);
 }
 
-bool fetchSummaryForPark(const String& region, int parkId, bool metricUnits, DynamicJsonDocument &doc) {
-    String r = region.length() ? region : regionForParkId(parkId);
-
-    String body = String("{\"units\":\"") + (metricUnits ? "metric" : "imperial") + "\",\"region\":\"" + r + "\",\"parks\":[" + String(parkId) + "]}";
-
-    return httpPostJson(API_SUMMARY, body, doc);
+bool fetchSummaryForPark(int parkId, bool metricUnits, const int rideIds[6], DynamicJsonDocument &doc) {
+    if (API_BASE_URL.length() == 0) return false;
+    DynamicJsonDocument bodyDoc(1024);
+    bodyDoc["park"] = parkId;
+    bodyDoc["units"] = metricUnits ? "metric" : "imperial";
+    JsonArray favs = bodyDoc.createNestedArray("favorite_ride_ids");
+    for (int i = 0; i < 6; i++) {
+        if (rideIds[i] > 0) favs.add(rideIds[i]);
+    }
+    String body;
+    serializeJson(bodyDoc, body);
+    const String url = apiUrl("/v1/summary");
+    return httpPostJson(url.c_str(), body, doc);
 }
 
 // -------------------- Drawing helpers --------------------
@@ -991,7 +1055,7 @@ void migrateResolveIdsIfNeeded();
 // -------------------- Web endpoints --------------------
 void startWeb() {
     server.on("/", HTTP_GET, [](AsyncWebServerRequest * req) {
-        req->send_P(200, "text/html; charset=utf-8", INDEX_HTML);
+        req->send_P(200, "text/html; charset=utf-8", in_setup_mode ? SETUP_HTML : INDEX_HTML);
     });
     server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest * req) {
         String s = loadConfigJson();
@@ -1016,8 +1080,12 @@ void startWeb() {
             req->send(400, "application/json", "{\"error\":\"missing park\"}");
             return;
         }
+        if (API_BASE_URL.length() == 0) {
+            req->send(503, "application/json", "{\"error\":\"unprovisioned\"}");
+            return;
+        }
         String park = req->getParam("park")->value();
-        String url = String(API_RIDES) + "?park=" + park;
+        String url = apiUrl("/v1/rides") + "?park=" + park;
         DynamicJsonDocument doc(24 * 1024);
         if (httpGetJson(url, doc)) {
             String out;
@@ -1025,6 +1093,62 @@ void startWeb() {
             req->send(200, "application/json", out);
         } else {
             req->send(502, "application/json", "{\"error\":\"upstream\"}");
+        }
+    });
+
+    // Provisioning endpoints (used by captive portal setup page)
+    server.on("/api/provision", HTTP_GET, [](AsyncWebServerRequest * req) {
+        DynamicJsonDocument doc(1024);
+        doc["provisioned"] = isProvisioned();
+        doc["wifi_ssid"] = WIFI_SSID;
+        doc["api_base_url"] = API_BASE_URL;
+        String out;
+        serializeJson(doc, out);
+        req->send(200, "application/json", out);
+    });
+
+    server.on("/api/provision", HTTP_POST, [](AsyncWebServerRequest * req) {}, NULL,
+      [](AsyncWebServerRequest * req, uint8_t * data, size_t len, size_t index, size_t total) {
+        static String body;
+        if (index == 0) body = "";
+        body.reserve(total);
+        body.concat((const char*)data, len);
+        if (index + len != total) return;
+
+        DynamicJsonDocument doc(2048);
+        if (deserializeJson(doc, body) != DeserializationError::Ok) {
+            req->send(400, "application/json", "{\"error\":\"bad_request\",\"details\":\"invalid JSON\"}");
+            return;
+        }
+        String ssid = String(doc["wifi_ssid"] | "");
+        String pass = String(doc["wifi_pass"] | "");
+        String api = String(doc["api_base_url"] | "");
+        ssid.trim();
+        api = normApiBaseUrl(api);
+        if (ssid.length() == 0) {
+            req->send(400, "application/json", "{\"error\":\"bad_request\",\"details\":\"missing wifi_ssid\"}");
+            return;
+        }
+        if (api.length() == 0 || !api.startsWith("http")) {
+            req->send(400, "application/json", "{\"error\":\"bad_request\",\"details\":\"missing api_base_url\"}");
+            return;
+        }
+        saveProvisioningKeys(ssid, pass, api);
+        req->send(200, "application/json", "{\"ok\":true}");
+        delay(200);
+        ESP.restart();
+    });
+
+    // Captive portal helpers (some clients probe these)
+    server.on("/generate_204", HTTP_GET, [](AsyncWebServerRequest * req) { req->redirect("/"); });
+    server.on("/hotspot-detect.html", HTTP_GET, [](AsyncWebServerRequest * req) { req->redirect("/"); });
+    server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest * req) { req->send(204); });
+
+    server.onNotFound([](AsyncWebServerRequest *req) {
+        if (in_setup_mode) {
+            req->send_P(200, "text/html; charset=utf-8", SETUP_HTML);
+        } else {
+            req->send(404, "text/plain", "Not found");
         }
     });
     server.begin();
@@ -1036,13 +1160,70 @@ int parkIndex = 0;
 int countdownCycleIndex = 0;
 int countdownRefreshCounter = 0;
 uint8_t api_fail_streak = 0;
+unsigned long wifi_disconnected_since_ms = 0;
+unsigned long boot_press_start_ms = 0;
+
+static String randomAlphaNum(size_t n) {
+    const char* alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghjkmnpqrstuvwxyz";
+    const size_t L = strlen(alphabet);
+    String out;
+    out.reserve(n);
+    for (size_t i = 0; i < n; i++) {
+        uint32_t r = esp_random();
+        out += alphabet[r % L];
+    }
+    return out;
+}
+
+static void startSetupMode(bool wipe) {
+    if (wipe) wipeProvisioningKeys(true);
+    in_setup_mode = true;
+
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_AP);
+
+    setup_ap_ssid = "ParkPal-Setup-" + randomAlphaNum(4);
+    setup_ap_pass = randomAlphaNum(12);
+
+    IPAddress apIP(192, 168, 4, 1);
+    IPAddress netM(255, 255, 255, 0);
+    WiFi.softAPConfig(apIP, apIP, netM);
+    WiFi.softAP(setup_ap_ssid.c_str(), setup_ap_pass.c_str());
+
+    dnsServer.start(53, "*", apIP);
+
+    display.setFullWindow();
+    display.firstPage();
+    do {
+        display.fillScreen(GxEPD_WHITE);
+        drawText(BORDER_MARGIN, BORDER_MARGIN + 40, "PARKPAL SETUP", &FreeSansBold18pt7b, GxEPD_BLACK);
+        int y = BORDER_MARGIN + 100;
+        drawText(BORDER_MARGIN, y, "Wi-Fi:", &FreeSans12pt7b, GxEPD_BLACK);
+        y += 30;
+        drawText(BORDER_MARGIN, y, setup_ap_ssid, &FreeSansBold12pt7b, GxEPD_BLACK);
+        y += 40;
+        drawText(BORDER_MARGIN, y, "Password:", &FreeSans12pt7b, GxEPD_BLACK);
+        y += 30;
+        drawText(BORDER_MARGIN, y, setup_ap_pass, &FreeSansBold12pt7b, GxEPD_BLACK);
+        y += 50;
+        drawText(BORDER_MARGIN, y, "Open: http://192.168.4.1", &FreeSans12pt7b, GxEPD_BLACK);
+    } while (display.nextPage());
+}
 
 void setup() {
     Serial.begin(115200);
+    pinMode(BOOT_PIN, INPUT_PULLUP);
     SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS);
     display.init(115200, true, 2, false);
     display.setRotation(4);
-    
+
+    loadProvisioningKeys();
+    startWeb();
+    if (!isProvisioned()) {
+        startSetupMode(false);
+        return;
+    }
+
     connectWiFi();
     initNTP();
     time_t now;
@@ -1053,7 +1234,6 @@ void setup() {
     Serial.println("--------------------------------------------");
     migrateResolveIdsIfNeeded();
     if (MDNS.begin("parkpal")) Serial.println("mDNS started: http://parkpal.local/");
-    startWeb();
     IPAddress ip = WiFi.localIP();
     String ipStr = ip.toString();
     display.setFullWindow();
@@ -1068,6 +1248,40 @@ void setup() {
 }
 
 void loop() {
+    if (in_setup_mode) {
+        dnsServer.processNextRequest();
+        delay(10);
+        return;
+    }
+
+    // Factory reset gesture (BOOT long press while running)
+    const bool bootPressed = digitalRead(BOOT_PIN) == LOW;
+    const unsigned long nowMs = millis();
+    if (bootPressed) {
+        if (boot_press_start_ms == 0) boot_press_start_ms = nowMs;
+        if ((uint32_t)(nowMs - boot_press_start_ms) >= FACTORY_RESET_HOLD_MS) {
+            renderMessage("Factory Reset...", MSG_FONT);
+            startSetupMode(true);
+            boot_press_start_ms = 0;
+            return;
+        }
+    } else {
+        boot_press_start_ms = 0;
+    }
+
+    // Wi-Fi fallback to AP after sustained disconnect
+    if (WiFi.status() != WL_CONNECTED) {
+        if (wifi_disconnected_since_ms == 0) wifi_disconnected_since_ms = nowMs;
+        if ((uint32_t)(nowMs - wifi_disconnected_since_ms) >= WIFI_AP_FALLBACK_AFTER_MS) {
+            renderMessage("WiFi Failed - Setup", MSG_FONT);
+            startSetupMode(false);
+            wifi_disconnected_since_ms = 0;
+            return;
+        }
+    } else {
+        wifi_disconnected_since_ms = 0;
+    }
+
     // Config save should trigger an immediate refresh, even if the caller doesn't hit /api/refresh.
     if (config_changed) {
         config_changed = false;
@@ -1113,9 +1327,8 @@ void loop() {
                 legacy[i] = RC.legacyNames[idx][i];
             }
             DynamicJsonDocument doc(16 * 1024);
-            String region = regionForParkId(parkId);
             const bool wifiOk = ensureWiFiConnected(WIFI_CONNECT_TIMEOUT_MS);
-            bool ok = wifiOk && fetchSummaryForPark(region, parkId, RC.metric, doc);
+            bool ok = wifiOk && fetchSummaryForPark(parkId, RC.metric, ids, doc);
             if (!ok && wifiOk) {
                 api_fail_streak++;
                 if (api_fail_streak >= API_FAIL_STREAK_WIFI_RESET) {
@@ -1125,7 +1338,7 @@ void loop() {
                     connectWiFi();
                     kickNTP();
                     if (WiFi.status() == WL_CONNECTED) {
-                        ok = fetchSummaryForPark(region, parkId, RC.metric, doc);
+                        ok = fetchSummaryForPark(parkId, RC.metric, ids, doc);
                     }
                 }
             } else if (ok) {
@@ -1220,7 +1433,8 @@ bool resolveParkSlotsToIds(int parkId, JsonDocument& cfgDoc) {
     while (ids.size() < 6) ids.add(0);
     while (labs.size() < 6) labs.add("");
     DynamicJsonDocument doc(24 * 1024);
-    String url = String(API_RIDES) + "?park=" + String(parkId);
+    if (API_BASE_URL.length() == 0) return false;
+    String url = apiUrl("/v1/rides") + "?park=" + String(parkId);
     if (!httpGetJson(url, doc)) return false;
     JsonArray canon = doc["rides"].as<JsonArray>();
     if (canon.isNull()) return false;
