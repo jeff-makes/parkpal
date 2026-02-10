@@ -1316,7 +1316,7 @@ async function fetchRides(parkId) {
   try {
     const res = await fetch(`/api/rides?park=${parkId}`);
     const data = await res.json();
-    const rides = data.parks?.[0]?.rides || [];
+    const rides = data.rides || data.parks?.[0]?.rides || [];
     rideCache[parkId] = rides;
     return rides;
   } catch (e) {

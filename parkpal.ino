@@ -761,7 +761,7 @@ void renderParks(const DynamicJsonDocument& doc, const int rideIds[6], const Str
     };
     Row rows[6];
     int count = 0;
-    JsonArrayConst ridesJson = doc["parks"][0]["rides"].as<JsonArrayConst>();
+    JsonArrayConst ridesJson = doc["park"]["rides"].as<JsonArrayConst>();
     for (int s = 0; s < 6; s++) {
         int dId = rideIds[s];
         String dLbl = rideLabels[s];
@@ -1222,7 +1222,7 @@ bool resolveParkSlotsToIds(int parkId, JsonDocument& cfgDoc) {
     DynamicJsonDocument doc(24 * 1024);
     String url = String(API_RIDES) + "?park=" + String(parkId);
     if (!httpGetJson(url, doc)) return false;
-    JsonArray canon = doc["parks"][0]["rides"].as<JsonArray>();
+    JsonArray canon = doc["rides"].as<JsonArray>();
     if (canon.isNull()) return false;
     bool changed = false;
     for (int i = 0; i < 6; i++) {
