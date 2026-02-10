@@ -224,7 +224,22 @@ export default {
       });
     }
 
-    // --- List available regions/parks
+    // --- Destinations (new canonical endpoint for UI park picker)
+    if (req.method === "GET" && url.pathname === "/v1/destinations") {
+      const REGION_NAMES = { orlando: "Orlando", tokyo: "Tokyo" };
+      const destinations = Object.entries(REGIONS).map(([id, cfg]) => ({
+        id,
+        name: REGION_NAMES[id] || id,
+        parks: cfg.parks.map(p => ({ id: p.id, name: p.name, provider: "queue_times" }))
+      }));
+      return json({
+        updated_at: new Date().toISOString(),
+        destinations,
+        errors: []
+      }, 300, { "x-request-id": requestId, ...CORS });
+    }
+
+    // --- List available regions/parks (legacy)
     if (req.method === "GET" && url.pathname === "/v1/regions") {
       const out = {};
       for (const [name, cfg] of Object.entries(REGIONS)) {
