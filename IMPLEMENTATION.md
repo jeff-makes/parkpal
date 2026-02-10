@@ -12,10 +12,12 @@ Keep this section up to date as work lands so you can resume quickly in a new se
 - [x] Worker: add `parks.json` + `wrangler.toml`; switch `/v1/destinations` to be sourced from `parks.json` (Orlando+Tokyo). (commit: `106fd74`)
 - [x] Worker: make `/v1/regions` a deprecated alias returning the same payload as `/v1/destinations`. (commit: `018ab64`)
 - [x] Worker: refactor `GET /v1/rides?park=<id>` to per-park (sourced from `parks.json`) with a 24h Cache API entry per park. (commit: `8de1617`)
+- [x] Worker: refactor `POST /v1/summary` to per-park (sourced from `parks.json`) with a 30m Cache API entry per park+units and park-specific weather coords. (commit: `2b9b600`)
 - [x] Docs: make this plan internally consistent + executable. (commit: `df30b90`)
 
 **Next (recommended order):**
-- [ ] Worker: refactor to per-park cache keys + per-park weather coords (update `/v1/rides` + `/v1/summary`).
+- [ ] Worker: remove remaining region-based summary code (`REGIONS`, `prefetch()`, `getOrFetchSummary()`, legacy cache helpers) *or* clearly label it “legacy” until firmware migration is complete.
+- [ ] Worker: update `/v1/status` to report per-park cache health (or remove `/v1/status` entirely for v1).
 - [ ] Firmware: remove secrets/personal defaults + add provisioning (AP + captive portal) + `api_base_url` provisioning NVS key.
 - [ ] README: rewrite for the self-hosted Worker flow + add real BOM links + real photos.
 - [ ] Add California (Disneyland + DCA) to `parks.json` *after verifying Queue-Times park IDs*.
