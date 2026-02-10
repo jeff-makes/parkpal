@@ -17,6 +17,7 @@ Keep this section up to date as work lands so you can resume quickly in a new se
 - [x] Worker: update `/v1/status` to report per-park summary cache health (park+units keys). (commit: `6589dbc`)
 - [x] Worker: remove dead region-based code paths (`REGIONS`, warm-cache/replay leftovers). (commit: `5381914`)
 - [x] Firmware: Phase 0 scrub (remove hardcoded secrets/personal defaults; remove replay UI/logic). (commit: `32461c5`)
+- [x] Firmware: sync firmware + UI to Worker v1 response shapes (`/v1/rides` and `/v1/summary`). (commit: `8f73ad9`)
 - [x] Docs: make this plan internally consistent + executable. (commit: `df30b90`)
 
 **Next (recommended order):**
