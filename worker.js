@@ -1,5 +1,5 @@
-// ParkPal API – live data + edge cache (no DB needed)
-// Supports multiple regions: Orlando (WDW) + Tokyo Disney Resort
+// ParkPal API – per-park data + edge cache (no DB needed)
+// Park registry sourced from parks.json (Orlando + Tokyo)
 
 import parksRegistry from "./parks.json";
 
@@ -12,30 +12,7 @@ const CACHE_VERSION = "v1";
 // In-isolate hot cache (avoids even Cache API lookups when the Worker stays warm)
 const MEM_CACHE = new Map(); // key -> { expiresAtMs, payload }
 
-// --- Regions config ---
-const REGIONS = {
-  orlando: {
-    coords: { lat: 28.3772, lon: -81.5707 },
-    parks: [
-      { id: 6, name: "Magic Kingdom", url: "https://queue-times.com/parks/6/queue_times.json" },
-      { id: 7, name: "Hollywood Studios", url: "https://queue-times.com/parks/7/queue_times.json" },
-      { id: 8, name: "Animal Kingdom", url: "https://queue-times.com/parks/8/queue_times.json" },
-      { id: 5, name: "EPCOT", url: "https://queue-times.com/parks/5/queue_times.json" }
-    ]
-  },
-  tokyo: {
-    coords: { lat: 35.6329, lon: 139.8804 },
-    parks: [
-      { id: 274, name: "Tokyo Disneyland", url: "https://queue-times.com/parks/274/queue_times.json" },
-      { id: 275, name: "Tokyo DisneySea", url: "https://queue-times.com/parks/275/queue_times.json" }
-    ]
-  }
-};
-
-// Flat list of all parks (for lookups — used by summary, which still reads REGIONS)
-const ALL_PARKS = Object.values(REGIONS).flatMap(r => r.parks);
-
-// Flat park lookup from parks.json registry (used by rides endpoint)
+// Flat park lookup from parks.json registry
 const REGISTRY_PARKS = new Map();
 for (const dest of parksRegistry.destinations) {
   for (const p of dest.parks) REGISTRY_PARKS.set(p.id, p);
@@ -193,17 +170,6 @@ export default {
 
 // ---------- helpers ----------
 
-function nameForPark(id) {
-  return ALL_PARKS.find(p => p.id === id)?.name || `Park ${id}`;
-}
-
-function regionForParkId(id) {
-  for (const [name, cfg] of Object.entries(REGIONS)) {
-    if (cfg.parks.some(p => p.id === id)) return name;
-  }
-  return "orlando"; // fallback
-}
-
 // Unified JSON fetch with timeout + ok-check
 async function fetchJSON(url, options = {}, timeoutMs) {
   const ms = Number(timeoutMs) || DEFAULT_TIMEOUT_MS;
@@ -217,10 +183,12 @@ async function fetchJSON(url, options = {}, timeoutMs) {
   return resp.json();
 }
 
-function summaryCacheKey(units, region) {
-  // Stable synthetic URL key for Cache API.
-  return `https://cache.parkpal.fun/${CACHE_VERSION}/summary?region=${encodeURIComponent(region)}&units=${encodeURIComponent(units)}`;
+function parseUpdatedAtMs(payload) {
+  const ms = Date.parse(payload?.updated_at);
+  return Number.isFinite(ms) ? ms : null;
 }
+
+// --- Rides cache (24h TTL) ---
 
 function ridesCacheKey(parkId) {
   return `https://cache.parkpal.fun/${CACHE_VERSION}/rides?park=${parkId}`;
@@ -298,6 +266,8 @@ async function fetchAndCacheRides(env, parkId, parkEntry) {
     return null;
   }
 }
+
+// --- Park summary cache (30 min TTL) ---
 
 function parkSummaryCacheKey(parkId, units) {
   return `https://cache.parkpal.fun/${CACHE_VERSION}/summary?park=${parkId}&units=${encodeURIComponent(units)}`;
@@ -406,155 +376,9 @@ async function fetchParkSummary(env, parkId, parkEntry, units) {
   return payload;
 }
 
-function parseUpdatedAtMs(payload) {
-  const ms = Date.parse(payload?.updated_at);
-  return Number.isFinite(ms) ? ms : null;
-}
-
-async function cacheGetSummaryPayload(units, region) {
-  const key = summaryCacheKey(units, region);
-  const now = Date.now();
-
-  const mem = MEM_CACHE.get(key);
-  if (mem) {
-    if (mem.expiresAtMs > now) return mem.payload;
-    MEM_CACHE.delete(key);
-  }
-
-  const resp = await caches.default.match(new Request(key));
-  if (!resp) return null;
-  try {
-    const payload = await resp.json();
-    const updatedAtMs = parseUpdatedAtMs(payload);
-    if (!updatedAtMs) return null;
-    const expiresAtMs = updatedAtMs + CACHE_TTL_SECONDS * 1000;
-    if (expiresAtMs <= now) return null;
-    MEM_CACHE.set(key, { expiresAtMs, payload });
-    return payload;
-  } catch (_) {
-    return null;
-  }
-}
-
-async function cachePutSummaryPayload(units, region, payload) {
-  const key = summaryCacheKey(units, region);
-  const now = Date.now();
-
-  MEM_CACHE.set(key, { expiresAtMs: now + CACHE_TTL_SECONDS * 1000, payload });
-  const resp = new Response(JSON.stringify(payload), {
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": `public, max-age=${CACHE_TTL_SECONDS}`
-    }
-  });
-  await caches.default.put(new Request(key), resp);
-}
-
-async function getOrFetchSummary(env, units, region, requestId = "N/A", { forceRefresh = false } = {}) {
-  // 1. Try standard cache
-  if (!forceRefresh) {
-    const cached = await cacheGetSummaryPayload(units, region);
-    if (cached) return cached;
-  }
-
-  // 2. Fetch live
-  const payload = await prefetch(env, units, region, requestId);
-
-  // 3. Save to cache
-  try { await cachePutSummaryPayload(units, region, payload); } catch (_) { }
-
-  return payload;
-}
-
-async function prefetch(env, units, region, requestId = "N/A") {
-  const errors = [];
-  const regionConfig = REGIONS[region];
-
-  if (!regionConfig) {
-    return { updated_at: new Date().toISOString(), source: "live", units, region, weather: null, parks: [], errors: ["invalid_region"] };
-  }
-
-  // fetch parks in parallel (each park isolated so one failure doesn't kill all)
-  const parks = await Promise.all(regionConfig.parks.map(async p => {
-    try {
-      const j = await fetchJSON(p.url, { headers: { "User-Agent": "ParkPal/1.0" } }, env.PREFETCH_TIMEOUT_MS);
-      const byId = new Map();
-
-      // Some parks return rides nested under `lands`; others (notably Tokyo) return a flat `rides` array.
-      // A few responses include an empty `lands: []` even when `rides` is populated, so merge both.
-      if (j && Array.isArray(j.lands)) {
-        for (const land of j.lands) {
-          for (const ride of (land?.rides || [])) {
-            if (!ride || ride.id == null) continue;
-            byId.set(Number(ride.id), {
-              id: Number(ride.id),
-              name: ride.name || "Unknown Ride",
-              is_open: !!ride.is_open,
-              wait_time: Number(ride.wait_time ?? 0)
-            });
-          }
-        }
-      }
-
-      if (j && Array.isArray(j.rides)) {
-        for (const ride of j.rides) {
-          if (!ride || ride.id == null) continue;
-          const id = Number(ride.id);
-          if (byId.has(id)) continue;
-          byId.set(id, {
-            id,
-            name: ride.name || "Unknown Ride",
-            is_open: !!ride.is_open,
-            wait_time: Number(ride.wait_time ?? 0)
-          });
-        }
-      }
-
-      return { id: p.id, name: j?.park || p.name, rides: [...byId.values()] };
-    } catch (e) {
-      errors.push(`park_${p.id}_${e?.status ? `HTTP_${e.status}` : (e?.message || "error")}`);
-      return { id: p.id, name: p.name, rides: [] };
-    }
-  }));
-
-  // weather (isolated too) — uses region-specific coords
-  let weather = { temp: 0, desc: "", sunrise: null, sunset: null };
-  try {
-    const { lat, lon } = regionConfig.coords;
-    const w = await fetchJSON(
-      `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=${units}&appid=${env.OWM_API_KEY}`,
-      {},
-      env.PREFETCH_TIMEOUT_MS
-    );
-    weather = {
-      temp: Math.round(w?.main?.temp ?? 0),
-      desc: (w?.weather?.[0]?.description || "").toLowerCase(),
-      sunrise: w?.sys?.sunrise ?? null,
-      sunset: w?.sys?.sunset ?? null
-    };
-  } catch (e) {
-    errors.push(`weather_${e?.status ? `HTTP_${e.status}` : (e?.message || "error")}`);
-  }
-
-  const payload = {
-    updated_at: new Date().toISOString(),
-    source: "live",
-    region,
-    units,
-    weather,
-    parks,
-    errors
-  };
-
-  return payload;
-}
+// --- Shared helpers ---
 
 const normUnits = (u) => (String(u || "imperial").toLowerCase().startsWith("m") ? "metric" : "imperial");
-const normRegion = (r) => (REGIONS[String(r || "").toLowerCase()] ? String(r).toLowerCase() : "orlando");
-const parseIds = (arr, fallback, maxLen = 8) => {
-  if (!Array.isArray(arr) || arr.length === 0) return fallback;
-  return arr.map(n => Number(n)).filter(n => Number.isInteger(n)).slice(0, maxLen);
-};
 
 function json(data, maxAge = 60, extraHeaders = {}) {
   const { status, ...headers } = extraHeaders;
