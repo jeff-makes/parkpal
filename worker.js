@@ -6,6 +6,7 @@ import parksRegistry from "./parks.json";
 // --- Tunables (can override via env vars if you want) ---
 const DEFAULT_TIMEOUT_MS = 4000; // 4s
 const CACHE_TTL_SECONDS = 1800;  // 30 minutes
+const RIDES_CACHE_TTL_SECONDS = 86400; // 24 hours
 const CACHE_VERSION = "v1";
 
 // In-isolate hot cache (avoids even Cache API lookups when the Worker stays warm)
@@ -31,8 +32,14 @@ const REGIONS = {
   }
 };
 
-// Flat list of all parks (for lookups)
+// Flat list of all parks (for lookups — used by summary, which still reads REGIONS)
 const ALL_PARKS = Object.values(REGIONS).flatMap(r => r.parks);
+
+// Flat park lookup from parks.json registry (used by rides endpoint)
+const REGISTRY_PARKS = new Map();
+for (const dest of parksRegistry.destinations) {
+  for (const p of dest.parks) REGISTRY_PARKS.set(p.id, p);
+}
 
 export default {
   async fetch(req, env, ctx) {
@@ -73,70 +80,32 @@ export default {
       return json(status, 0, { "x-request-id": requestId, ...CORS });
     }
 
-    // --- Canonical ride list (IDs + names)
-    // GET /v1/rides?park=6            (single)
-    // GET /v1/rides?park=6,5,7,8      (multi)
-    // GET /v1/rides?region=tokyo      (all parks in region)
-    // Optional: &include_single_rider=1
+    // --- Canonical ride list for one park
+    // GET /v1/rides?park=274
     if (req.method === "GET" && url.pathname === "/v1/rides") {
-      const regionParam = url.searchParams.get("region");
       const parkParam = url.searchParams.get("park");
-      const includeSingle = url.searchParams.get("include_single_rider") === "1";
-
-      let requestedIds = [];
-
-      if (regionParam && REGIONS[regionParam]) {
-        // Get all parks for region
-        requestedIds = REGIONS[regionParam].parks.map(p => p.id);
-      } else if (parkParam) {
-        // Parse specific park IDs
-        requestedIds = parkParam
-          .split(",")
-          .map(s => Number(s.trim()))
-          .filter(n => Number.isInteger(n) && ALL_PARKS.some(p => p.id === n));
-      } else {
-        return json({ error: "missing park or region param" }, 0, { status: 400, "x-request-id": requestId, ...CORS });
+      const parkId = Number(parkParam);
+      if (!parkParam || !Number.isInteger(parkId)) {
+        return json({ error: "bad_request", details: "missing park" }, 0, { status: 400, "x-request-id": requestId, ...CORS });
       }
 
-      if (requestedIds.length === 0) {
-        return json({ error: "no valid park IDs" }, 0, { status: 400, "x-request-id": requestId, ...CORS });
+      const parkEntry = REGISTRY_PARKS.get(parkId);
+      if (!parkEntry) {
+        return json({ error: "bad_request", details: "unknown park" }, 0, { status: 400, "x-request-id": requestId, ...CORS });
       }
 
-      // Determine region for cache lookup
-      const region = regionParam || regionForParkId(requestedIds[0]);
-
-      // Use cached summary (metric key arbitrarily) or fetch if empty/stale
-      let payload = await getOrFetchSummary(env, "metric", region, requestId);
-
-      // If still nothing, fail gracefully
-      if (!payload || !Array.isArray(payload.parks)) {
-        return json({ error: "no data" }, 0, { status: 503, "x-request-id": requestId, ...CORS });
+      // Try rides cache first (24h TTL)
+      let cached = await cacheGetRides(parkId);
+      if (cached) {
+        return json(cached, 60, { "x-request-id": requestId, ...CORS });
       }
 
-      // If we have a cached payload but ride lists are empty/missing, refresh once.
-      // (This protects against upstream schema differences or older cached payloads.)
-      const needsRefresh = requestedIds.some(pid => {
-        const park = payload.parks.find(p => Number(p.id) === pid);
-        return !park || !Array.isArray(park.rides) || park.rides.length === 0;
-      });
-      if (needsRefresh) {
-        payload = await getOrFetchSummary(env, "metric", region, requestId, { forceRefresh: true });
+      // Fetch live from Queue-Times
+      const payload = await fetchAndCacheRides(env, parkId, parkEntry);
+      if (!payload) {
+        return json({ error: "upstream_error" }, 0, { status: 503, "x-request-id": requestId, ...CORS });
       }
-
-      const parksOut = [];
-      for (const pid of requestedIds) {
-        const park = payload.parks.find(p => Number(p.id) === pid) || { id: pid, name: nameForPark(pid), rides: [] };
-        const rides = (park.rides || [])
-          .filter(r => includeSingle ? true : !String(r.name || "").includes("Single Rider"))
-          .map(r => ({ id: r.id, name: r.name || "Unknown Ride" }));
-        parksOut.push({ park_id: pid, name: park.name || nameForPark(pid), rides });
-      }
-
-      return json({
-        updated_at: payload.updated_at || new Date().toISOString(),
-        region,
-        parks: parksOut
-      }, 60, { "x-request-id": requestId, ...CORS });
+      return json(payload, 60, { "x-request-id": requestId, ...CORS });
     }
 
     // --- Main endpoint: summary
@@ -274,6 +243,83 @@ async function fetchJSON(url, options = {}, timeoutMs) {
 function summaryCacheKey(units, region) {
   // Stable synthetic URL key for Cache API.
   return `https://cache.parkpal.fun/${CACHE_VERSION}/summary?region=${encodeURIComponent(region)}&units=${encodeURIComponent(units)}`;
+}
+
+function ridesCacheKey(parkId) {
+  return `https://cache.parkpal.fun/${CACHE_VERSION}/rides?park=${parkId}`;
+}
+
+async function cacheGetRides(parkId) {
+  const key = ridesCacheKey(parkId);
+  const now = Date.now();
+
+  const mem = MEM_CACHE.get(key);
+  if (mem) {
+    if (mem.expiresAtMs > now) return mem.payload;
+    MEM_CACHE.delete(key);
+  }
+
+  const resp = await caches.default.match(new Request(key));
+  if (!resp) return null;
+  try {
+    const payload = await resp.json();
+    const updatedAtMs = parseUpdatedAtMs(payload);
+    if (!updatedAtMs) return null;
+    const expiresAtMs = updatedAtMs + RIDES_CACHE_TTL_SECONDS * 1000;
+    if (expiresAtMs <= now) return null;
+    MEM_CACHE.set(key, { expiresAtMs, payload });
+    return payload;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function cachePutRides(parkId, payload) {
+  const key = ridesCacheKey(parkId);
+  MEM_CACHE.set(key, { expiresAtMs: Date.now() + RIDES_CACHE_TTL_SECONDS * 1000, payload });
+  const resp = new Response(JSON.stringify(payload), {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": `public, max-age=${RIDES_CACHE_TTL_SECONDS}`
+    }
+  });
+  await caches.default.put(new Request(key), resp);
+}
+
+// Fetch rides for a single park from Queue-Times, normalize, and cache
+async function fetchAndCacheRides(env, parkId, parkEntry) {
+  try {
+    const j = await fetchJSON(parkEntry.queue_times_url, { headers: { "User-Agent": "ParkPal/1.0" } }, env.PREFETCH_TIMEOUT_MS);
+    const byId = new Map();
+
+    // Normalize: merge lands[].rides + top-level rides[]
+    if (j && Array.isArray(j.lands)) {
+      for (const land of j.lands) {
+        for (const ride of (land?.rides || [])) {
+          if (!ride || ride.id == null) continue;
+          byId.set(Number(ride.id), { id: Number(ride.id), name: ride.name || "Unknown Ride" });
+        }
+      }
+    }
+    if (j && Array.isArray(j.rides)) {
+      for (const ride of j.rides) {
+        if (!ride || ride.id == null) continue;
+        const id = Number(ride.id);
+        if (!byId.has(id)) byId.set(id, { id, name: ride.name || "Unknown Ride" });
+      }
+    }
+
+    const payload = {
+      updated_at: new Date().toISOString(),
+      park: { id: parkId, name: parkEntry.name },
+      rides: [...byId.values()],
+      errors: []
+    };
+    try { await cachePutRides(parkId, payload); } catch (_) { }
+    return payload;
+  } catch (_) {
+    return null;
+  }
 }
 
 function parseUpdatedAtMs(payload) {
