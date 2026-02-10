@@ -13,6 +13,7 @@ Keep this section up to date as work lands so you can resume quickly in a new se
 - [x] Worker: make `/v1/regions` a deprecated alias returning the same payload as `/v1/destinations`. (commit: `018ab64`)
 - [x] Worker: refactor `GET /v1/rides?park=<id>` to per-park (sourced from `parks.json`) with a 24h Cache API entry per park. (commit: `8de1617`)
 - [x] Worker: refactor `POST /v1/summary` to per-park (sourced from `parks.json`) with a 30m Cache API entry per park+units and park-specific weather coords. (commit: `2b9b600`)
+- [x] Worker: enforce v1 favorite rules (`favorite_ride_ids` max 6; empty favorites → `rides: []`). (commit: `68b3833`)
 - [x] Docs: make this plan internally consistent + executable. (commit: `df30b90`)
 
 **Next (recommended order):**
