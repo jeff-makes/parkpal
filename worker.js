@@ -226,8 +226,8 @@ export default {
       });
     }
 
-    // --- Destinations (canonical endpoint for UI park picker, sourced from parks.json)
-    if (req.method === "GET" && url.pathname === "/v1/destinations") {
+    // --- Destinations (canonical) + regions (deprecated alias, same payload)
+    if (req.method === "GET" && (url.pathname === "/v1/destinations" || url.pathname === "/v1/regions")) {
       const destinations = parksRegistry.destinations.map(d => ({
         id: d.id,
         name: d.name,
@@ -238,18 +238,6 @@ export default {
         destinations,
         errors: []
       }, 300, { "x-request-id": requestId, ...CORS });
-    }
-
-    // --- List available regions/parks (legacy)
-    if (req.method === "GET" && url.pathname === "/v1/regions") {
-      const out = {};
-      for (const [name, cfg] of Object.entries(REGIONS)) {
-        out[name] = {
-          coords: cfg.coords,
-          parks: cfg.parks.map(p => ({ id: p.id, name: p.name }))
-        };
-      }
-      return json(out, 300, { "x-request-id": requestId, ...CORS });
     }
 
     if (url.pathname === "/") return new Response("ParkPal API ok", { headers: { "x-request-id": requestId, ...CORS } });
