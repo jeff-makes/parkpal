@@ -16,11 +16,11 @@ Keep this section up to date as work lands so you can resume quickly in a new se
 - [x] Worker: enforce v1 favorite rules (`favorite_ride_ids` max 6; empty favorites → `rides: []`). (commit: `68b3833`)
 - [x] Worker: update `/v1/status` to report per-park summary cache health (park+units keys). (commit: `6589dbc`)
 - [x] Worker: remove dead region-based code paths (`REGIONS`, warm-cache/replay leftovers). (commit: `5381914`)
+- [x] Firmware: Phase 0 scrub (remove hardcoded secrets/personal defaults; remove replay UI/logic). (commit: `32461c5`)
 - [x] Docs: make this plan internally consistent + executable. (commit: `df30b90`)
 
 **Next (recommended order):**
-- [ ] Worker: remove remaining region-based summary code (`REGIONS`, `prefetch()`, `getOrFetchSummary()`, legacy cache helpers) *or* clearly label it “legacy” until firmware migration is complete.
-- [ ] Firmware: remove secrets/personal defaults + add provisioning (AP + captive portal) + `api_base_url` provisioning NVS key.
+- [ ] Firmware: add provisioning (AP + captive portal) + `api_base_url` provisioning NVS key.
 - [ ] README: rewrite for the self-hosted Worker flow + add real BOM links + real photos.
 - [ ] Add California (Disneyland + DCA) to `parks.json` *after verifying Queue-Times park IDs*.
 
