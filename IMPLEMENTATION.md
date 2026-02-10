@@ -18,10 +18,11 @@ Keep this section up to date as work lands so you can resume quickly in a new se
 - [x] Worker: remove dead region-based code paths (`REGIONS`, warm-cache/replay leftovers). (commit: `5381914`)
 - [x] Firmware: Phase 0 scrub (remove hardcoded secrets/personal defaults; remove replay UI/logic). (commit: `32461c5`)
 - [x] Firmware: sync firmware + UI to Worker v1 response shapes (`/v1/rides` and `/v1/summary`). (commit: `8f73ad9`)
+- [x] Firmware: add AP captive portal provisioning (Wi‑Fi + `api_base_url`) + BOOT long-press factory reset. (commit: `aef7d02`)
 - [x] Docs: make this plan internally consistent + executable. (commit: `df30b90`)
 
 **Next (recommended order):**
-- [ ] Firmware: add provisioning (AP + captive portal) + `api_base_url` provisioning NVS key.
+- [ ] Firmware: polish provisioning UX (clearer “needs setup” screen; add “enter setup mode” button in normal UI if desired).
 - [ ] README: rewrite for the self-hosted Worker flow + add real BOM links + real photos.
 - [ ] Add California (Disneyland + DCA) to `parks.json` *after verifying Queue-Times park IDs*.
 
