@@ -20,12 +20,13 @@ Keep this section up to date as work lands so you can resume quickly in a new se
 - [x] Firmware: sync firmware + UI to Worker v1 response shapes (`/v1/rides` and `/v1/summary`). (commit: `8f73ad9`)
 - [x] Firmware: add AP captive portal provisioning (Wi‑Fi + `api_base_url`) + BOOT long-press factory reset. (commit: `aef7d02`)
 - [x] Repo: add MIT `LICENSE`, `.gitignore`, and a self-hosted README skeleton. (commit: `a962fb2`)
+- [x] Destinations: add California (Disneyland Resort) to `parks.json` and UI resort list. (commit: `d86b0bb`)
 - [x] Docs: make this plan internally consistent + executable. (commit: `df30b90`)
 
 **Next (recommended order):**
 - [ ] Firmware: polish provisioning UX (clearer “needs setup” screen; add “enter setup mode” button in normal UI if desired).
 - [ ] README: rewrite for the self-hosted Worker flow + add real BOM links + real photos.
-- [ ] Add California (Disneyland + DCA) to `parks.json` *after verifying Queue-Times park IDs*.
+- [x] Add California (Disneyland + DCA) to `parks.json` *after verifying Queue-Times park IDs*.
 
 ## Context (why we’re doing this)
 
