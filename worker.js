@@ -1,6 +1,8 @@
 // ParkPal API – live data + edge cache (no DB needed)
 // Supports multiple regions: Orlando (WDW) + Tokyo Disney Resort
 
+import parksRegistry from "./parks.json";
+
 // --- Tunables (can override via env vars if you want) ---
 const DEFAULT_TIMEOUT_MS = 4000; // 4s
 const CACHE_TTL_SECONDS = 1800;  // 30 minutes
@@ -224,13 +226,12 @@ export default {
       });
     }
 
-    // --- Destinations (new canonical endpoint for UI park picker)
+    // --- Destinations (canonical endpoint for UI park picker, sourced from parks.json)
     if (req.method === "GET" && url.pathname === "/v1/destinations") {
-      const REGION_NAMES = { orlando: "Orlando", tokyo: "Tokyo" };
-      const destinations = Object.entries(REGIONS).map(([id, cfg]) => ({
-        id,
-        name: REGION_NAMES[id] || id,
-        parks: cfg.parks.map(p => ({ id: p.id, name: p.name, provider: "queue_times" }))
+      const destinations = parksRegistry.destinations.map(d => ({
+        id: d.id,
+        name: d.name,
+        parks: d.parks.map(p => ({ id: p.id, name: p.name, provider: p.provider }))
       }));
       return json({
         updated_at: new Date().toISOString(),

@@ -1,0 +1,64 @@
+{
+  "destinations": [
+    {
+      "id": "orlando",
+      "name": "Orlando",
+      "parks": [
+        {
+          "id": 6,
+          "name": "Magic Kingdom",
+          "provider": "queue_times",
+          "queue_times_url": "https://queue-times.com/parks/6/queue_times.json",
+          "coords": { "lat": 28.3772, "lon": -81.5707 },
+          "tz": "EST5EDT,M3.2.0/2,M11.1.0/2"
+        },
+        {
+          "id": 7,
+          "name": "Hollywood Studios",
+          "provider": "queue_times",
+          "queue_times_url": "https://queue-times.com/parks/7/queue_times.json",
+          "coords": { "lat": 28.3772, "lon": -81.5707 },
+          "tz": "EST5EDT,M3.2.0/2,M11.1.0/2"
+        },
+        {
+          "id": 8,
+          "name": "Animal Kingdom",
+          "provider": "queue_times",
+          "queue_times_url": "https://queue-times.com/parks/8/queue_times.json",
+          "coords": { "lat": 28.3772, "lon": -81.5707 },
+          "tz": "EST5EDT,M3.2.0/2,M11.1.0/2"
+        },
+        {
+          "id": 5,
+          "name": "EPCOT",
+          "provider": "queue_times",
+          "queue_times_url": "https://queue-times.com/parks/5/queue_times.json",
+          "coords": { "lat": 28.3772, "lon": -81.5707 },
+          "tz": "EST5EDT,M3.2.0/2,M11.1.0/2"
+        }
+      ]
+    },
+    {
+      "id": "tokyo",
+      "name": "Tokyo",
+      "parks": [
+        {
+          "id": 274,
+          "name": "Tokyo Disneyland",
+          "provider": "queue_times",
+          "queue_times_url": "https://queue-times.com/parks/274/queue_times.json",
+          "coords": { "lat": 35.6329, "lon": 139.8804 },
+          "tz": "JST-9"
+        },
+        {
+          "id": 275,
+          "name": "Tokyo DisneySea",
+          "provider": "queue_times",
+          "queue_times_url": "https://queue-times.com/parks/275/queue_times.json",
+          "coords": { "lat": 35.6329, "lon": 139.8804 },
+          "tz": "JST-9"
+        }
+      ]
+    }
+  ]
+}
