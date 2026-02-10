@@ -10,6 +10,7 @@ Keep this section up to date as work lands so you can resume quickly in a new se
 - [x] Worker: remove deferred features (cron `scheduled()`, warm-cache/prefetch, replay/history branches). (commit: `cd087ad`)
 - [x] Worker: add `GET /v1/destinations` (temporary implementation backed by in-file `REGIONS`, Orlando+Tokyo). (commit: `a5c404e`)
 - [x] Worker: add `parks.json` + `wrangler.toml`; switch `/v1/destinations` to be sourced from `parks.json` (Orlando+Tokyo). (commit: `106fd74`)
+- [x] Worker: make `/v1/regions` a deprecated alias returning the same payload as `/v1/destinations`. (commit: `018ab64`)
 - [x] Docs: make this plan internally consistent + executable. (commit: `df30b90`)
 
 **Next (recommended order):**
