@@ -1,0 +1,22 @@
+.DS_Store
+.dev.vars
+.env
+.env.*
+node_modules/
+
+# Arduino / PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+.clangd/
+
+# Build artifacts
+*.bin
+*.elf
+*.hex
+*.map
+
+# IDEs
+.vscode/
+.idea/
+
