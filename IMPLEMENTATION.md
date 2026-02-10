@@ -26,7 +26,6 @@ Keep this section up to date as work lands so you can resume quickly in a new se
 **Next (recommended order):**
 - [ ] Firmware: polish provisioning UX (clearer “needs setup” screen; add “enter setup mode” button in normal UI if desired).
 - [ ] README: rewrite for the self-hosted Worker flow + add real BOM links + real photos.
-- [x] Add California (Disneyland + DCA) to `parks.json` *after verifying Queue-Times park IDs*.
 
 ## Context (why we’re doing this)
 
