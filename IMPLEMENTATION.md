@@ -14,11 +14,11 @@ Keep this section up to date as work lands so you can resume quickly in a new se
 - [x] Worker: refactor `GET /v1/rides?park=<id>` to per-park (sourced from `parks.json`) with a 24h Cache API entry per park. (commit: `8de1617`)
 - [x] Worker: refactor `POST /v1/summary` to per-park (sourced from `parks.json`) with a 30m Cache API entry per park+units and park-specific weather coords. (commit: `2b9b600`)
 - [x] Worker: enforce v1 favorite rules (`favorite_ride_ids` max 6; empty favorites → `rides: []`). (commit: `68b3833`)
+- [x] Worker: update `/v1/status` to report per-park summary cache health (park+units keys). (commit: `6589dbc`)
 - [x] Docs: make this plan internally consistent + executable. (commit: `df30b90`)
 
 **Next (recommended order):**
 - [ ] Worker: remove remaining region-based summary code (`REGIONS`, `prefetch()`, `getOrFetchSummary()`, legacy cache helpers) *or* clearly label it “legacy” until firmware migration is complete.
-- [ ] Worker: update `/v1/status` to report per-park cache health (or remove `/v1/status` entirely for v1).
 - [ ] Firmware: remove secrets/personal defaults + add provisioning (AP + captive portal) + `api_base_url` provisioning NVS key.
 - [ ] README: rewrite for the self-hosted Worker flow + add real BOM links + real photos.
 - [ ] Add California (Disneyland + DCA) to `parks.json` *after verifying Queue-Times park IDs*.
