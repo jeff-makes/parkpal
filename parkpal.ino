@@ -356,6 +356,13 @@ DNSServer dnsServer;
 bool in_setup_mode = false;
 String setup_ap_ssid;
 String setup_ap_pass;
+static bool pending_restart = false;
+static unsigned long restart_at_ms = 0;
+
+static void scheduleRestart(uint32_t delayMs) {
+    pending_restart = true;
+    restart_at_ms = millis() + delayMs;
+}
 
 static void loadProvisioningKeys() {
     prefs.begin("parkpal", true);
@@ -363,6 +370,8 @@ static void loadProvisioningKeys() {
     WIFI_PASS = prefs.getString("wifi_pass", "");
     API_BASE_URL = normApiBaseUrl(prefs.getString("api_base_url", ""));
     prefs.end();
+    WIFI_SSID.trim();
+    API_BASE_URL.trim();
 }
 
 static void saveProvisioningKeys(const String& ssid, const String& pass, const String& baseUrl) {
@@ -1129,8 +1138,9 @@ void startWeb() {
         delete body;
         req->_tempObject = nullptr;
         req->send(200, "application/json", "{\"ok\":true}");
-        delay(200);
-        ESP.restart();
+        // Restarting immediately inside an async handler can cause lwIP asserts on some setups.
+        // Schedule the restart from the main loop to let the response flush cleanly.
+        scheduleRestart(750);
     });
 
     // Captive portal helpers (some clients probe these)
@@ -1216,15 +1226,20 @@ void setup() {
     display.setRotation(4);
 
     loadProvisioningKeys();
+    Serial.println();
+    Serial.println("=== ParkPal boot ===");
+    Serial.printf("Provisioned: %s\n", isProvisioned() ? "yes" : "no");
+    if (WIFI_SSID.length()) Serial.printf("WiFi SSID: %s\n", WIFI_SSID.c_str());
+    if (API_BASE_URL.length()) Serial.printf("API Base: %s\n", API_BASE_URL.c_str());
     if (!isProvisioned()) {
         startSetupMode(false);
         startWeb();
         return;
     }
 
-    startWeb();
     connectWiFi();
     initNTP();
+    startWeb();
     time_t now;
     time(&now);
     struct tm* timeinfo = localtime(&now);
@@ -1247,6 +1262,11 @@ void setup() {
 }
 
 void loop() {
+    if (pending_restart && (int32_t)(millis() - restart_at_ms) >= 0) {
+        Serial.println("Restarting now...");
+        delay(50);
+        ESP.restart();
+    }
     if (in_setup_mode) {
         dnsServer.processNextRequest();
         delay(10);
