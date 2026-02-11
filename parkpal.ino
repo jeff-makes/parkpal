@@ -28,6 +28,12 @@ static String API_BASE_URL; // e.g. https://your-worker.your-subdomain.workers.d
 
 // --- WiFi diagnostics ---
 static volatile uint8_t last_wifi_disconnect_reason = 0; // wifi_err_reason_t
+static bool wifi_scan_logged_this_boot = false;
+
+// Setup AP password:
+// - Set to "" for an open (no-password) AP.
+// - Otherwise must be >= 8 chars for WPA2.
+static const char* SETUP_AP_PASSWORD = "parkpal1234";
 
 static const char* wlStatusToStr(wl_status_t s) {
     switch (s) {
@@ -61,6 +67,26 @@ static const char* wifiReasonToStr(uint8_t r) {
         case 204: return "HANDSHAKE_TIMEOUT";
         default: return "UNKNOWN";
     }
+}
+
+static void logScanForSsidOnce(const String& target) {
+    if (wifi_scan_logged_this_boot) return;
+    wifi_scan_logged_this_boot = true;
+
+    Serial.println("WiFi: scanning for SSID...");
+    int n = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true);
+    Serial.printf("WiFi: scan complete, found %d networks\n", n);
+    if (n <= 0) return;
+
+    bool found = false;
+    for (int i = 0; i < n; i++) {
+        if (WiFi.SSID(i) == target) {
+            found = true;
+            Serial.printf("WiFi: SSID match '%s' RSSI=%d ch=%d enc=%d\n",
+                          target.c_str(), WiFi.RSSI(i), WiFi.channel(i), (int)WiFi.encryptionType(i));
+        }
+    }
+    if (!found) Serial.printf("WiFi: SSID '%s' not found in scan\n", target.c_str());
 }
 
 static String normApiBaseUrl(String s) {
@@ -480,6 +506,7 @@ void connectWiFi() {
     Serial.printf("WiFi: connect result status=%d (%s)\n", (int)WiFi.status(), wlStatusToStr(WiFi.status()));
     if (WiFi.status() != WL_CONNECTED) {
         Serial.printf("WiFi: last disconnect reason=%u (%s)\n", (unsigned)last_wifi_disconnect_reason, wifiReasonToStr(last_wifi_disconnect_reason));
+        logScanForSsidOnce(WIFI_SSID);
     }
     if (WiFi.status() == WL_CONNECTED) clearJustProvisionedFlag();
 }
@@ -1274,12 +1301,16 @@ static void startSetupMode(bool wipe) {
     WiFi.mode(WIFI_AP_STA);
 
     setup_ap_ssid = "ParkPal-Setup-" + randomAlphaNum(4);
-    setup_ap_pass = randomAlphaNum(12);
+    setup_ap_pass = String(SETUP_AP_PASSWORD);
 
     IPAddress apIP(192, 168, 4, 1);
     IPAddress netM(255, 255, 255, 0);
     WiFi.softAPConfig(apIP, apIP, netM);
-    WiFi.softAP(setup_ap_ssid.c_str(), setup_ap_pass.c_str());
+    if (strlen(SETUP_AP_PASSWORD) == 0) {
+        WiFi.softAP(setup_ap_ssid.c_str());
+    } else {
+        WiFi.softAP(setup_ap_ssid.c_str(), SETUP_AP_PASSWORD);
+    }
 
     dnsServer.start(53, "*", apIP);
 
@@ -1295,7 +1326,7 @@ static void startSetupMode(bool wipe) {
         y += 40;
         drawText(BORDER_MARGIN, y, "Password:", &FreeSans12pt7b, GxEPD_BLACK);
         y += 30;
-        drawText(BORDER_MARGIN, y, setup_ap_pass, &FreeSansBold12pt7b, GxEPD_BLACK);
+        drawText(BORDER_MARGIN, y, setup_ap_pass.length() ? setup_ap_pass : "(none)", &FreeSansBold12pt7b, GxEPD_BLACK);
         y += 50;
         drawText(BORDER_MARGIN, y, "Open: http://192.168.4.1", &FreeSans12pt7b, GxEPD_BLACK);
     } while (display.nextPage());
