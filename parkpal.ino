@@ -1175,7 +1175,7 @@ void renderParks(const DynamicJsonDocument& doc, const int rideIds[6], const Str
             }
         } else {
             drawText(M, currentY, "PARKPAL", titleFont, GxEPD_BLACK);
-            drawText(M, contentY, "SETUP", largeDaysFont, GxEPD_BLACK);
+            drawText(M, contentY, "LIVE WAIT TIMES", largeDaysFont, GxEPD_BLACK);
         }
 
         // --- Right Column: Weather ---
