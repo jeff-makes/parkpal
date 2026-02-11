@@ -975,18 +975,18 @@ void drawDegreeMark(int16_t cx, int16_t cy, int16_t outerR, uint16_t color) {
 
 static const unsigned char* weatherIconBitmap(int code, const String& desc, int16_t& outW, int16_t& outH) {
     // Default to icon dimensions that match the bitmaps in WeatherIcons.h.
-    // Most icons are 64x32 (256 bytes). ICON_CLOUDY is 60x32 (240 bytes).
+    // Most icons are 64x32 (256 bytes). ICON_CLOUDY is 64x30 (240 bytes).
     outW = 64;
     outH = 32;
 
     // Prefer OpenWeather condition code if available.
     if (code >= 200 && code <= 232) return ICON_THUNDERSTORM; // thunderstorm
     if (code >= 300 && code <= 531) return ICON_RAIN; // drizzle + rain
-    if (code >= 600 && code <= 622) { outW = 60; return ICON_CLOUDY; } // snow (closest we have)
-    if (code >= 701 && code <= 781) { outW = 60; return ICON_CLOUDY; } // mist/fog/etc
+    if (code >= 600 && code <= 622) { outH = 30; return ICON_CLOUDY; } // snow (closest we have)
+    if (code >= 701 && code <= 781) { outH = 30; return ICON_CLOUDY; } // mist/fog/etc
     if (code == 800) return ICON_SUNNY; // clear
     if (code == 801) return ICON_PARTLY_CLOUDY; // few clouds
-    if (code >= 802 && code <= 804) { outW = 60; return ICON_CLOUDY; } // clouds
+    if (code >= 802 && code <= 804) { outH = 30; return ICON_CLOUDY; } // clouds
 
     // Fallback: map by description text (keeps older Workers working).
     String d = desc;
@@ -995,11 +995,11 @@ static const unsigned char* weatherIconBitmap(int code, const String& desc, int1
     if (d.indexOf("storm") >= 0) return ICON_THUNDERSTORM;
     if (d.indexOf("rain") >= 0) return ICON_RAIN;
     if (d.indexOf("drizzle") >= 0) return ICON_RAIN;
-    if (d.indexOf("snow") >= 0) { outW = 60; return ICON_CLOUDY; }
+    if (d.indexOf("snow") >= 0) { outH = 30; return ICON_CLOUDY; }
     if (d.indexOf("clear") >= 0) return ICON_SUNNY;
     if (d.indexOf("few clouds") >= 0) return ICON_PARTLY_CLOUDY;
-    if (d.indexOf("cloud") >= 0) { outW = 60; return ICON_CLOUDY; }
-    if (d.indexOf("mist") >= 0 || d.indexOf("fog") >= 0 || d.indexOf("haze") >= 0) { outW = 60; return ICON_CLOUDY; }
+    if (d.indexOf("cloud") >= 0) { outH = 30; return ICON_CLOUDY; }
+    if (d.indexOf("mist") >= 0 || d.indexOf("fog") >= 0 || d.indexOf("haze") >= 0) { outH = 30; return ICON_CLOUDY; }
     return ICON_UNKNOWN;
 }
 
