@@ -26,6 +26,9 @@ static String WIFI_SSID;
 static String WIFI_PASS;
 static String API_BASE_URL; // e.g. https://your-worker.your-subdomain.workers.dev (no trailing slash)
 
+// --- WiFi diagnostics ---
+static volatile uint8_t last_wifi_disconnect_reason = 0; // wifi_err_reason_t
+
 static String normApiBaseUrl(String s) {
     s.trim();
     while (s.endsWith("/")) s.remove(s.length() - 1);
@@ -365,6 +368,24 @@ static void scheduleRestart(uint32_t delayMs) {
     restart_at_ms = millis() + delayMs;
 }
 
+static void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+    switch (event) {
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+            last_wifi_disconnect_reason = info.wifi_sta_disconnected.reason;
+            Serial.printf("WiFi event: STA_DISCONNECTED reason=%u\n", (unsigned)last_wifi_disconnect_reason);
+            break;
+        case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+            Serial.println("WiFi event: STA_CONNECTED");
+            break;
+        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+            Serial.printf("WiFi event: GOT_IP %s\n", WiFi.localIP().toString().c_str());
+            kickNTP();
+            break;
+        default:
+            break;
+    }
+}
+
 static void loadProvisioningKeys() {
     prefs.begin("parkpal", true);
     WIFI_SSID = prefs.getString("wifi_ssid", "");
@@ -414,12 +435,18 @@ static bool isProvisioned() {
 // -------------------- Wi-Fi / NTP --------------------
 void connectWiFi() {
     if (WIFI_SSID.length() == 0) return;
+    Serial.printf("WiFi: begin connect (ssid_len=%u pass_len=%u)\n", (unsigned)WIFI_SSID.length(), (unsigned)WIFI_PASS.length());
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
     WiFi.persistent(false);
+    WiFi.setSleep(false);
     WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
     unsigned long t0 = millis();
     while (WiFi.status() != WL_CONNECTED && (uint32_t)(millis() - t0) < WIFI_CONNECT_TIMEOUT_MS) delay(200);
+    Serial.printf("WiFi: connect result status=%d\n", (int)WiFi.status());
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.printf("WiFi: last disconnect reason=%u\n", (unsigned)last_wifi_disconnect_reason);
+    }
     if (WiFi.status() == WL_CONNECTED) clearJustProvisionedFlag();
 }
 
@@ -433,6 +460,7 @@ bool ensureWiFiConnected(uint32_t timeoutMs = 0) {
         lastAttemptMs = now;
         WiFi.disconnect(false);
         WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
+        Serial.printf("WiFi: reconnect attempt (status=%d)\n", (int)WiFi.status());
     }
 
     if (timeoutMs == 0) return false;
@@ -1137,6 +1165,7 @@ void startWeb() {
         String pass = String(doc["wifi_pass"] | "");
         String api = String(doc["api_base_url"] | "");
         ssid.trim();
+        pass.trim();
         api = normApiBaseUrl(api);
         if (ssid.length() == 0) {
             delete body;
@@ -1240,6 +1269,7 @@ static void startSetupMode(bool wipe) {
 
 void setup() {
     Serial.begin(115200);
+    WiFi.onEvent(onWiFiEvent);
     pinMode(BOOT_PIN, INPUT_PULLUP);
     SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS);
     display.init(115200, true, 2, false);
