@@ -1207,7 +1207,7 @@ void renderParks(const DynamicJsonDocument& doc, const int rideIds[6], const Str
         drawText(descX, currentY, clipToWidth(desc, subContentFont, descMaxW, true), subContentFont, GxEPD_BLACK);
         
         // --- Ride List / Setup Instructions ---
-        int16_t listHeaderY = dynamicHeaderHeight + 30;
+        int16_t listHeaderY = dynamicHeaderHeight + 24;
         const int16_t listTop = listHeaderY + lineHeight(titleFont) + 5;
         if (count == 0) {
             const int16_t top = dynamicHeaderHeight + 40;
@@ -1244,7 +1244,7 @@ void renderParks(const DynamicJsonDocument& doc, const int rideIds[6], const Str
             }
         } else {
             drawText(M, listHeaderY, parkName, titleFont, GxEPD_RED);
-            const int16_t rowH = 42; // Tighten up row height
+            const int16_t rowH = 36; // Fits 6 rows comfortably on 7.5" 528px height with our margins
             const int16_t waitColR = W - M;
             int16_t y = listTop;
             for (int i = 0; i < count; i++) {

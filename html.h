@@ -1027,6 +1027,96 @@ let cfg = {};
 let rideCache = {};
 let currentPick = { parkId: null, slot: null };
 
+// Popular/iconic ride suggestions used to pre-fill the first 5 slots when a park is first enabled.
+// Matching is best-effort (by name tokens) against the live rides list from the Worker.
+const POPULAR_RIDES = {
+  // WDW
+  6:  [ ['tron'], ['seven','dwarfs'], ['space','mountain'], ['haunted','mansion'], ['pirates'] ], // Magic Kingdom
+  5:  [ ['guardians'], ['remy'], ['test','track'], ['soarin'], ['frozen'] ],                      // EPCOT
+  7:  [ ['rise','resistance'], ['slinky'], ['runaway','railway'], ['smugglers'], ['tower'] ],     // Hollywood Studios
+  8:  [ ['flight','passage'], ['navi'], ['kilimanjaro'], ['everest'], ['dinosaur'] ],             // Animal Kingdom
+
+  // Disneyland Resort
+  16: [ ['rise','resistance'], ['indiana'], ['space','mountain'], ['haunted','mansion'], ['pirates'] ], // Disneyland
+  17: [ ['radiator'], ['mission','breakout'], ['incredicoaster'], ['web','slingers'], ['soarin'] ],     // DCA
+
+  // Tokyo Disney Resort
+  274:[ ['beauty','beast'], ['pooh'], ['monsters'], ['big','thunder'], ['splash'] ],              // Tokyo Disneyland
+  275:[ ['journey','center'], ['soaring'], ['toy','story'], ['indiana'], ['tower'] ]              // Tokyo DisneySea
+};
+
+function normName(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/[’‘]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[–—]/g, '-')
+    .replace(/[^a-zA-Z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function findRideByTokens(rides, tokens) {
+  const want = tokens.map(t => normName(t)).filter(Boolean);
+  if (!want.length) return null;
+  for (const ride of rides) {
+    const n = normName(ride?.name);
+    if (!n) continue;
+    let ok = true;
+    for (const t of want) {
+      if (!n.includes(t)) { ok = false; break; }
+    }
+    if (ok) return ride;
+  }
+  return null;
+}
+
+async function maybeAutofillPopularRides(parkId) {
+  const suggestions = POPULAR_RIDES[parkId];
+  if (!suggestions) return;
+
+  cfg.rides_by_park_ids = cfg.rides_by_park_ids || {};
+  cfg.rides_by_park_labels = cfg.rides_by_park_labels || {};
+  cfg.rides_by_park_ids[parkId] = cfg.rides_by_park_ids[parkId] || [0,0,0,0,0,0];
+  cfg.rides_by_park_labels[parkId] = cfg.rides_by_park_labels[parkId] || ['','','','','',''];
+
+  const ids = cfg.rides_by_park_ids[parkId];
+  const labels = cfg.rides_by_park_labels[parkId];
+
+  // Only auto-fill if the first 5 slots are all empty (don't override user choices).
+  for (let i = 0; i < 5; i++) {
+    if ((ids[i] || 0) !== 0 || (labels[i] || '').trim().length) return;
+  }
+
+  const rides = await fetchRides(parkId);
+  if (!rides || !rides.length) return;
+
+  const chosenIds = new Set(ids.filter(x => x > 0));
+  let changed = false;
+
+  for (let i = 0; i < 5 && i < suggestions.length; i++) {
+    const ride = findRideByTokens(rides, suggestions[i]);
+    if (!ride) continue;
+    if (chosenIds.has(ride.id)) continue;
+    ids[i] = ride.id;
+    labels[i] = ride.name;
+    chosenIds.add(ride.id);
+    changed = true;
+  }
+
+  if (!changed) return;
+
+  // If slots are currently rendered, update them live.
+  for (let i = 0; i < 5; i++) {
+    const nameEl = $(`slot-name-${parkId}-${i}`);
+    if (!nameEl) continue;
+    const label = labels[i] || '';
+    nameEl.textContent = label || 'Not selected';
+    nameEl.classList.toggle('empty', !label);
+  }
+}
+
 // DOM helpers
 const $ = id => document.getElementById(id);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -1277,11 +1367,14 @@ async function renderParksAccordions() {
     const park = resort.parks[parkId];
     if (!park) continue;
     
-    // Ensure ride data structures exist
-    cfg.rides_by_park_ids = cfg.rides_by_park_ids || {};
-    cfg.rides_by_park_labels = cfg.rides_by_park_labels || {};
-    cfg.rides_by_park_ids[parkId] = cfg.rides_by_park_ids[parkId] || [0,0,0,0,0,0];
-    cfg.rides_by_park_labels[parkId] = cfg.rides_by_park_labels[parkId] || ['','','','','',''];
+	    // Ensure ride data structures exist
+	    cfg.rides_by_park_ids = cfg.rides_by_park_ids || {};
+	    cfg.rides_by_park_labels = cfg.rides_by_park_labels || {};
+	    cfg.rides_by_park_ids[parkId] = cfg.rides_by_park_ids[parkId] || [0,0,0,0,0,0];
+	    cfg.rides_by_park_labels[parkId] = cfg.rides_by_park_labels[parkId] || ['','','','','',''];
+	    // Best-effort: prefill first 5 slots with iconic rides for this park.
+	    // Runs async and updates the slot labels when complete.
+	    maybeAutofillPopularRides(parkId);
     
     const acc = document.createElement('div');
     acc.className = 'accordion open';
@@ -1303,15 +1396,15 @@ async function renderParksAccordions() {
     const ids = cfg.rides_by_park_ids[parkId];
     const labels = cfg.rides_by_park_labels[parkId];
     
-    for (let i = 0; i < 6; i++) {
-      const slot = document.createElement('div');
-      slot.className = 'ride-slot';
-      const label = labels[i] || '';
-      slot.innerHTML = `
-        <div class="slot-num">${i + 1}</div>
-        <div class="slot-name ${label ? '' : 'empty'}" id="slot-name-${parkId}-${i}">${label ? escapeHtml(label) : 'Not selected'}</div>
-        <button class="slot-btn" data-park="${parkId}" data-slot="${i}">Choose</button>
-      `;
+	    for (let i = 0; i < 6; i++) {
+	      const slot = document.createElement('div');
+	      slot.className = 'ride-slot';
+	      const label = labels[i] || '';
+	      slot.innerHTML = `
+	        <div class="slot-num">${i + 1}</div>
+	        <div class="slot-name ${label ? '' : 'empty'}" id="slot-name-${parkId}-${i}">${label ? escapeHtml(label) : 'Not selected'}</div>
+	        <button class="slot-btn" data-park="${parkId}" data-slot="${i}">Choose</button>
+	      `;
       slot.querySelector('.slot-btn').addEventListener('click', (e) => {
         openRidePicker(parseInt(e.target.dataset.park), parseInt(e.target.dataset.slot));
       });
