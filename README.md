@@ -33,10 +33,12 @@ ParkPal does **not** phone home to someone else's server. You deploy a tiny Clou
 | ESP32 e-paper driver board (SPI) | Waveshare universal board or similar | ~$10-15 |
 | 7.5" tri-color e-ink panel (880x528) | Black/white/red, SPI interface | ~$40-55 |
 | USB-C cable + power supply | Any phone charger works | — |
+| Frame (optional) | IKEA RÖDALM 13x18 cm (5x7 in) | — |
 
-<!-- TODO: paste actual product links here -->
-<!-- Driver board: -->
-<!-- Panel: -->
+**Links (what I used):**
+- E‑ink panel (7.5" tri‑color, 880×528): https://www.aliexpress.com/item/1005004369892606.html
+- ESP32 e‑paper driver board: https://www.aliexpress.com/item/1005007030138070.html
+- Frame: IKEA RÖDALM 13×18 cm (5×7 in)
 
 The driver board and panel connect via a ribbon cable — no soldering, no breadboard.
 
