@@ -336,28 +336,6 @@ static int clampDayOfMonth(int year, int month, int day) {
     return clampi(day, 1, daysInMonth(year, month));
 }
 
-static bool computeIsoDatePlusMonthsInTz(const char* tz, int addMonths, String& outIso) {
-    TzGuard guard(tz);
-    time_t now;
-    time(&now);
-    if (now < 1700000000) return false; // NTP not ready
-    struct tm* lt = localtime(&now);
-    if (!lt) return false;
-    int y = lt->tm_year + 1900;
-    int m = lt->tm_mon + 1;
-    int d = lt->tm_mday;
-
-    m += addMonths;
-    while (m > 12) { y++; m -= 12; }
-    while (m < 1) { y--; m += 12; }
-    d = clampDayOfMonth(y, m, d);
-
-    char buf[11];
-    snprintf(buf, sizeof(buf), "%04d-%02d-%02d", y, m, d);
-    outIso = String(buf);
-    return true;
-}
-
 // Days since 1970-01-01 (civil day number). DST-safe for day-diff math.
 static int32_t daysFromCivil(int y, unsigned m, unsigned d) {
     y -= (m <= 2);
@@ -434,6 +412,28 @@ struct TzGuard {
         tzset();
     }
 };
+
+static bool computeIsoDatePlusMonthsInTz(const char* tz, int addMonths, String& outIso) {
+    TzGuard guard(tz);
+    time_t now;
+    time(&now);
+    if (now < 1700000000) return false; // NTP not ready
+    struct tm* lt = localtime(&now);
+    if (!lt) return false;
+    int y = lt->tm_year + 1900;
+    int m = lt->tm_mon + 1;
+    int d = lt->tm_mday;
+
+    m += addMonths;
+    while (m > 12) { y++; m -= 12; }
+    while (m < 1) { y--; m += 12; }
+    d = clampDayOfMonth(y, m, d);
+
+    char buf[11];
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02d", y, m, d);
+    outIso = String(buf);
+    return true;
+}
 
 // -------------------- RuntimeConfig Parser --------------------
 bool parseConfig(RuntimeConfig& out) {
