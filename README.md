@@ -113,7 +113,7 @@ Open `parkpal.ino` and hit Upload.
 
 On first power-up (or after a factory reset), ParkPal can't connect to Wi-Fi yet, so it starts its own access point and shows the credentials on the e-ink screen:
 
-1. **Look at the screen** — it displays a Wi-Fi name (like `ParkPal-Setup-Ab3x`) and a random password.
+1. **Look at the screen** — it displays a Wi-Fi name (like `ParkPal-Setup-Ab3x`) and the setup password.
 2. **Connect** to that Wi-Fi from your phone or laptop.
 3. **Open** `http://192.168.4.1/` — a setup page appears.
 4. **Enter** your home Wi-Fi SSID, password, and your Worker URL.
@@ -122,6 +122,8 @@ On first power-up (or after a factory reset), ParkPal can't connect to Wi-Fi yet
 
 After it connects, open `http://parkpal.local/` to configure which parks and rides to display.
 
+**Setup network password:** `parkpal1234`
+
 **Factory reset:** Hold the **BOOT** button for ~8 seconds while ParkPal is running. It wipes Wi-Fi credentials and config, then re-enters setup mode.
 
 > Heads up: holding BOOT while pressing the **EN** (reset) button puts the ESP32 into USB flashing mode instead. For factory reset, just hold BOOT by itself while the device is already running.
@@ -129,6 +131,12 @@ After it connects, open `http://parkpal.local/` to configure which parks and rid
 If ParkPal loses Wi-Fi for more than 5 minutes, it automatically falls back to setup mode so you can re-enter credentials without needing to factory reset.
 
 ## Troubleshooting
+
+**Wi-Fi requirements / compatibility**
+- **2.4 GHz only.** ESP32 can't join 5 GHz networks.
+- **WPA2-Personal (PSK) recommended.** WPA3-only or some “WPA2/WPA3 + PMF required” configs can break ESP32 clients.
+- **Captive portal / hotel Wi‑Fi won’t work** (no browser login flow on the device).
+- **Mesh Wi‑Fi:** if you have multiple access points broadcasting the same SSID, ParkPal automatically locks to the strongest AP (BSSID) to avoid handshake timeouts.
 
 **`parkpal.local` doesn't work (especially on Android)**
 mDNS support varies by device. Android in particular often doesn't resolve `.local` names. Use the device's IP address instead — it's printed on the e-ink screen at startup and on the Serial monitor.
