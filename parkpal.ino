@@ -84,6 +84,22 @@ static const char* wifiEncToStr(int enc) {
     }
 }
 
+static void logSuspiciousStringBytes(const char* label, const String& s) {
+    bool any = false;
+    for (unsigned i = 0; i < s.length(); i++) {
+        uint8_t b = (uint8_t)s.charAt(i);
+        if (b < 0x20 || b > 0x7E) {
+            if (!any) Serial.printf("%s: non-ASCII bytes at:", label);
+            Serial.printf(" [%u]=0x%02X", i, (unsigned)b);
+            any = true;
+        }
+    }
+    if (any) Serial.println();
+    if (s.length() && (s.charAt(0) == ' ' || s.charAt(s.length() - 1) == ' ')) {
+        Serial.printf("%s: WARNING leading/trailing space detected\n", label);
+    }
+}
+
 static void logScanForSsidOnce(const String& target) {
     if (wifi_scan_logged_this_boot) return;
     wifi_scan_logged_this_boot = true;
@@ -524,6 +540,8 @@ static bool isProvisioned() {
 void connectWiFi() {
     if (WIFI_SSID.length() == 0) return;
     Serial.printf("WiFi: begin connect (ssid_len=%u pass_len=%u)\n", (unsigned)WIFI_SSID.length(), (unsigned)WIFI_PASS.length());
+    logSuspiciousStringBytes("WiFi SSID", WIFI_SSID);
+    logSuspiciousStringBytes("WiFi PASS", WIFI_PASS);
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
     WiFi.persistent(false);
