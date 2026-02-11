@@ -1187,8 +1187,11 @@ static void startSetupMode(bool wipe) {
     // if we fully turn Wi-Fi off. Keep the TCP/IP stack up; just move into AP mode.
     dnsServer.stop();
     WiFi.disconnect(false);
-    WiFi.softAPdisconnect(true);
-    WiFi.mode(WIFI_AP);
+    // IMPORTANT: don't call `softAPdisconnect(true)` here (wifioff=true). That can tear down
+    // lwIP internals while AsyncTCP tasks are still running, leading to `Invalid mbox` asserts.
+    WiFi.softAPdisconnect(false);
+    // Keep STA alive (harmless) to avoid churn in the underlying netif/tcpip plumbing.
+    WiFi.mode(WIFI_AP_STA);
 
     setup_ap_ssid = "ParkPal-Setup-" + randomAlphaNum(4);
     setup_ap_pass = randomAlphaNum(12);
