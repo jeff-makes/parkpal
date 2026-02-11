@@ -1,108 +1,197 @@
 # ParkPal
 
-An ESP32 + 7.5" tri‑color e‑ink display that shows:
-- Disney park wait times (your favorite rides)
-- Weather for the selected park
-- Countdown screens (trip + holidays/birthdays/etc.)
+A self-contained Disney park dashboard built on an ESP32 and a 7.5" tri-color e-ink display. It sits on your desk (or kitchen counter, or nightstand) and shows:
 
-This repo is meant to be **builder-friendly**:
-- No hardcoded Wi‑Fi secrets
-- No shared/public backend API
-- You deploy your own Cloudflare Worker (free tier works great)
-- First boot starts a setup Wi‑Fi + captive portal
+- **Wait times** for your favorite rides, updated every 30 minutes
+- **Live weather** for whichever park you're tracking
+- **Countdown screens** — trip countdowns, birthdays, holidays, with festive icons
 
-## Photos / Demos (TODO)
+Supports **Walt Disney World**, **Disneyland Resort**, and **Tokyo Disney Resort**.
 
-- TODO: add finished device photo
-- TODO: add close-up e‑ink photo
-- TODO: add web UI screenshot (desktop + mobile)
+<!-- TODO: hero photo of the finished device here -->
+<!-- TODO: close-up of the e-ink screen showing wait times -->
+<!-- TODO: screenshot of the web config UI (desktop + mobile) -->
+<!-- TODO: short video/GIF of a screen refresh -->
 
-## What You Need (BOM)
+## No Shared API — You Host Your Own
 
-**Required:**
-- ESP32 e‑paper driver board (SPI)
-- 7.5" tri‑color e‑ink panel (880×528)
-- USB cable + power supply
+ParkPal does **not** phone home to someone else's server. You deploy a tiny Cloudflare Worker (free tier is plenty) that fetches ride data and weather on your behalf. Your device talks only to your Worker. No accounts, no tokens, no rate limits to worry about.
 
-**Links (TODO):**
-- Driver board: TODO
-- Panel: TODO
+## How Hard Is This?
+
+| | |
+|---|---|
+| **Soldering** | None. The driver board plugs into the panel via a flat cable. |
+| **Parts** | 2 things to buy (board + panel), plus a USB cable you already own. |
+| **Software** | Flash one `.ino`, run two terminal commands for the Worker. |
+| **Time to build** | About an hour if everything goes smoothly. Most of that is waiting for Arduino to compile. |
+
+## What You Need
+
+| Part | Notes | Approx. Price |
+|---|---|---|
+| ESP32 e-paper driver board (SPI) | Waveshare universal board or similar | ~$10-15 |
+| 7.5" tri-color e-ink panel (880x528) | Black/white/red, SPI interface | ~$40-55 |
+| USB-C cable + power supply | Any phone charger works | — |
+
+<!-- TODO: paste actual product links here -->
+<!-- Driver board: -->
+<!-- Panel: -->
+
+The driver board and panel connect via a ribbon cable — no soldering, no breadboard.
 
 ## Quick Start
 
-1. Flash the firmware (`parkpal.ino`) to your ESP32.
-2. Deploy the backend Worker (`worker.js`) to your own Cloudflare account.
-3. Set your OpenWeather key (`OWM_API_KEY`) on the Worker.
-4. Power on ParkPal → join the setup Wi‑Fi → enter your Wi‑Fi + Worker URL.
-5. Open `http://parkpal.local/` → pick parks + rides.
+1. **Flash** the firmware (`parkpal.ino`) to your ESP32.
+2. **Deploy** the backend Worker to your Cloudflare account.
+3. **Power on** ParkPal — it starts a setup Wi-Fi network.
+4. **Join the setup Wi-Fi** and enter your home Wi-Fi credentials + Worker URL.
+5. **Open** `http://parkpal.local/` from your phone/laptop and pick your parks + rides.
 
-## Deploy the Backend (Cloudflare Worker)
+The rest of this README walks through each step.
 
-ParkPal does **not** use a shared hosted API. Each builder deploys their own Worker.
+## 1. Deploy the Backend (Cloudflare Worker)
 
-1. Install Wrangler: `npm install -g wrangler`
-2. Login: `wrangler login`
-3. Deploy from this repo root: `wrangler deploy`
-4. Set your OpenWeather key: `wrangler secret put OWM_API_KEY`
-5. Copy the printed Worker URL — you’ll paste this into ParkPal setup.
+Each builder deploys their own Worker. It takes about 2 minutes.
 
-Local dev note:
-- Use `.dev.vars` for local secrets (already ignored by `.gitignore`).
-- Don’t put `OWM_API_KEY` in `wrangler.toml`.
+**Prerequisites:** [Node.js](https://nodejs.org/) installed.
 
-## First Boot / Setup Mode
+```bash
+# Install the Cloudflare CLI
+npm install -g wrangler
 
-On first boot (or after factory reset), ParkPal starts a setup Wi‑Fi network and captive portal:
-- SSID + password are shown on the e‑ink screen
-- Connect and open `http://192.168.4.1/`
-- Enter your home Wi‑Fi SSID/password + your Worker URL
-- ParkPal reboots and connects
+# Log in to your (free) Cloudflare account
+wrangler login
 
-Reset back to setup:
-- Hold the `BOOT` button for ~8 seconds while it’s running (factory reset)
-  - Note: holding `BOOT` while pressing reset (`EN`) may put the ESP32 into flashing mode instead.
+# Deploy from this repo root
+wrangler deploy
+```
 
-## Firmware Build (Arduino IDE)
+Wrangler will print your Worker URL — something like `https://parkpal-api.YOUR-SUBDOMAIN.workers.dev`. Copy it; you'll need it during device setup.
 
-You’ll need:
-- Arduino IDE
-- ESP32 board support by Espressif (“esp32” in Boards Manager)
+**Set your OpenWeather API key:**
 
-Libraries (Arduino Library Manager):
-- `GxEPD2`
-- `ArduinoJson` (v6)
-- `ESPAsyncWebServer`
-- `AsyncTCP`
+ParkPal uses [OpenWeather](https://openweathermap.org/api) for weather data. Sign up for a free account and grab an API key, then:
 
-If you hit “Sketch too big”, pick a partition scheme with a larger app slot.
+```bash
+wrangler secret put OWM_API_KEY
+# paste your key when prompted
+```
 
-## Pin Notes (Only If You Swap Boards)
+**Local development:**
 
-Defaults in `parkpal.ino`:
-- `EPD_CS = 15`
-- `EPD_DC = 27`
-- `EPD_RST = 26`
-- `EPD_BUSY = 25`
-- `EPD_SCK = 13`
-- `EPD_MOSI = 14`
+For local testing with `wrangler dev`, put secrets in a `.dev.vars` file (already in `.gitignore`):
+
+```
+OWM_API_KEY=your_key_here
+```
+
+Never put `OWM_API_KEY` in `wrangler.toml` — that file is committed.
+
+## 2. Flash the Firmware (Arduino IDE)
+
+**Board support:**
+
+- Open Arduino IDE
+- Go to **Boards Manager** and install **"esp32" by Espressif Systems**
+- Select your ESP32 board (e.g., "ESP32 Dev Module")
+
+**Libraries** (install via Arduino Library Manager):
+
+| Library | Notes |
+|---|---|
+| `GxEPD2` | E-ink display driver |
+| `ArduinoJson` | Version 6.x |
+| `ESPAsyncWebServer` | Async HTTP server |
+| `AsyncTCP` | Required by ESPAsyncWebServer |
+
+Open `parkpal.ino` and hit Upload.
+
+> **"Sketch too big"?** In Arduino IDE, go to Tools > Partition Scheme and pick one with a larger app slot (e.g., "Huge APP").
+
+## 3. First Boot / Setup Mode
+
+On first power-up (or after a factory reset), ParkPal can't connect to Wi-Fi yet, so it starts its own access point and shows the credentials on the e-ink screen:
+
+1. **Look at the screen** — it displays a Wi-Fi name (like `ParkPal-Setup-Ab3x`) and a random password.
+2. **Connect** to that Wi-Fi from your phone or laptop.
+3. **Open** `http://192.168.4.1/` — a setup page appears.
+4. **Enter** your home Wi-Fi SSID, password, and your Worker URL.
+   - Paste the base URL only (e.g., `https://parkpal-api.my-sub.workers.dev`). Do **not** include `/v1`.
+5. **Save** — ParkPal reboots and connects to your Wi-Fi.
+
+After it connects, open `http://parkpal.local/` to configure which parks and rides to display.
+
+**Factory reset:** Hold the **BOOT** button for ~8 seconds while ParkPal is running. It wipes Wi-Fi credentials and config, then re-enters setup mode.
+
+> Heads up: holding BOOT while pressing the **EN** (reset) button puts the ESP32 into USB flashing mode instead. For factory reset, just hold BOOT by itself while the device is already running.
+
+If ParkPal loses Wi-Fi for more than 5 minutes, it automatically falls back to setup mode so you can re-enter credentials without needing to factory reset.
+
+## Troubleshooting
+
+**`parkpal.local` doesn't work (especially on Android)**
+mDNS support varies by device. Android in particular often doesn't resolve `.local` names. Use the device's IP address instead — it's printed on the e-ink screen at startup and on the Serial monitor.
+
+**Screen says "API Error" or "API HTTP 4xx/5xx"**
+- Double-check your Worker URL in setup. It should be the base URL without `/v1`.
+- Make sure you ran `wrangler secret put OWM_API_KEY` and the key is valid.
+- Try hitting `https://your-worker-url/v1/health` in a browser — you should see `{"ok":true}`.
+
+**Ride data shows "Closed" for everything**
+The upstream ride data source (Queue-Times) may be down, or the park may actually be closed. Check `https://your-worker-url/v1/status` for cache health and error details.
+
+**Weather shows 0 degrees**
+Your OpenWeather API key is probably missing or invalid. Run `wrangler secret put OWM_API_KEY` again.
+
+**"Sketch too big" during upload**
+Change your partition scheme in Arduino IDE: Tools > Partition Scheme > "Huge APP (3MB No OTA / 1MB SPIFFS)" or similar.
+
+## Pin Mapping
+
+If you're using a different ESP32 board, you may need to adjust the SPI pins in `parkpal.ino`:
+
+| Signal | Default GPIO |
+|---|---|
+| `EPD_CS` | 15 |
+| `EPD_DC` | 27 |
+| `EPD_RST` | 26 |
+| `EPD_BUSY` | 25 |
+| `EPD_SCK` | 13 |
+| `EPD_MOSI` | 14 |
+
+The Waveshare ESP32 e-paper driver board uses these by default — no changes needed if you're using that board.
 
 ## Repo Layout
 
 ```
 parkpal/
-├── parkpal.ino      # ESP32 firmware
-├── html.h           # Web UI served by the ESP32
+├── parkpal.ino      # ESP32 firmware (Arduino)
+├── html.h           # Web config UI (served by the ESP32)
 ├── setup_html.h     # Captive portal setup page
-├── worker.js        # Cloudflare Worker backend (self-hosted)
-├── parks.json       # Destination/park registry
-├── wrangler.toml    # Worker config
-├── WeatherIcons.h   # Bitmap icons
-├── IMPLEMENTATION.md
-└── LICENSE
+├── WeatherIcons.h   # Bitmap weather icons
+├── worker.js        # Cloudflare Worker (your self-hosted backend)
+├── parks.json       # Park registry (IDs, coordinates, timezones)
+├── wrangler.toml    # Wrangler config for the Worker
+└── LICENSE          # MIT
 ```
+
+## Supported Parks
+
+| Destination | Parks |
+|---|---|
+| Walt Disney World (Florida) | Magic Kingdom, EPCOT, Hollywood Studios, Animal Kingdom |
+| Disneyland Resort (California) | Disneyland, Disney California Adventure |
+| Tokyo Disney Resort (Japan) | Tokyo Disneyland, Tokyo DisneySea |
+
+Adding more parks is just a `parks.json` edit — PRs welcome if you verify the Queue-Times park IDs.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
 
 ## Disclaimer
 
-- Disney is a trademark of The Walt Disney Company.
-- Uses third-party data sources (Queue-Times, OpenWeather); their uptime/terms apply.
+Disney, Walt Disney World, Disneyland, and related names are trademarks of The Walt Disney Company. This project is not affiliated with or endorsed by Disney.
 
+ParkPal uses third-party data sources ([Queue-Times](https://queue-times.com/) for ride wait times, [OpenWeather](https://openweathermap.org/) for weather). Their availability and terms of service apply.
