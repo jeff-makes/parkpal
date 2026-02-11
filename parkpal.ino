@@ -358,6 +358,7 @@ String setup_ap_ssid;
 String setup_ap_pass;
 static bool pending_restart = false;
 static unsigned long restart_at_ms = 0;
+static bool just_provisioned = false;
 
 static void scheduleRestart(uint32_t delayMs) {
     pending_restart = true;
@@ -369,6 +370,9 @@ static void loadProvisioningKeys() {
     WIFI_SSID = prefs.getString("wifi_ssid", "");
     WIFI_PASS = prefs.getString("wifi_pass", "");
     API_BASE_URL = normApiBaseUrl(prefs.getString("api_base_url", ""));
+    // Used to make first-time setup less frustrating: if the user just provisioned
+    // and we still can't connect, immediately return to setup mode on boot.
+    just_provisioned = prefs.getBool("just_provisioned", false);
     prefs.end();
     WIFI_SSID.trim();
     API_BASE_URL.trim();
@@ -379,8 +383,17 @@ static void saveProvisioningKeys(const String& ssid, const String& pass, const S
     prefs.putString("wifi_ssid", ssid);
     prefs.putString("wifi_pass", pass);
     prefs.putString("api_base_url", normApiBaseUrl(baseUrl));
+    prefs.putBool("just_provisioned", true);
     prefs.end();
     loadProvisioningKeys();
+}
+
+static void clearJustProvisionedFlag() {
+    if (!just_provisioned) return;
+    prefs.begin("parkpal", false);
+    prefs.remove("just_provisioned");
+    prefs.end();
+    just_provisioned = false;
 }
 
 static void wipeProvisioningKeys(bool wipeConfigJson) {
@@ -388,6 +401,7 @@ static void wipeProvisioningKeys(bool wipeConfigJson) {
     prefs.remove("wifi_ssid");
     prefs.remove("wifi_pass");
     prefs.remove("api_base_url");
+    prefs.remove("just_provisioned");
     if (wipeConfigJson) prefs.remove("config_json");
     prefs.end();
     loadProvisioningKeys();
@@ -406,6 +420,7 @@ void connectWiFi() {
     WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
     unsigned long t0 = millis();
     while (WiFi.status() != WL_CONNECTED && (uint32_t)(millis() - t0) < WIFI_CONNECT_TIMEOUT_MS) delay(200);
+    if (WiFi.status() == WL_CONNECTED) clearJustProvisionedFlag();
 }
 
 bool ensureWiFiConnected(uint32_t timeoutMs = 0) {
@@ -426,6 +441,7 @@ bool ensureWiFiConnected(uint32_t timeoutMs = 0) {
     while (WiFi.status() != WL_CONNECTED && (uint32_t)(millis() - start) < timeoutMs) {
         delay(200);
     }
+    if (WiFi.status() == WL_CONNECTED) clearJustProvisionedFlag();
     return WiFi.status() == WL_CONNECTED;
 }
 
@@ -1242,7 +1258,19 @@ void setup() {
     }
 
     connectWiFi();
-    initNTP();
+    Serial.printf("WiFi status after connect: %d\n", (int)WiFi.status());
+    if (WiFi.status() != WL_CONNECTED && just_provisioned) {
+        Serial.println("WiFi connect failed after provisioning; returning to setup mode.");
+        startSetupMode(false);
+        startWeb();
+        return;
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("WiFi connected, IP: %s\n", WiFi.localIP().toString().c_str());
+        initNTP();
+    } else {
+        Serial.println("WiFi not connected; skipping NTP sync.");
+    }
     startWeb();
     time_t now;
     time(&now);
