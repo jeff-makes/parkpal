@@ -29,6 +29,9 @@ static String API_BASE_URL; // e.g. https://your-worker.your-subdomain.workers.d
 // --- WiFi diagnostics ---
 static volatile uint8_t last_wifi_disconnect_reason = 0; // wifi_err_reason_t
 static bool wifi_scan_logged_this_boot = false;
+static bool have_target_bssid = false;
+static uint8_t target_bssid[6] = {0};
+static int32_t target_channel = 0;
 
 // Setup AP password:
 // - Set to "" for an open (no-password) AP.
@@ -120,6 +123,7 @@ static void logScanForSsidOnce(const String& target) {
     }
 
     bool found = false;
+    int bestRssi = -999;
     for (int i = 0; i < n; i++) {
         if (WiFi.SSID(i) == target) {
             found = true;
@@ -127,9 +131,29 @@ static void logScanForSsidOnce(const String& target) {
             Serial.printf("WiFi: SSID match '%s' RSSI=%d ch=%d enc=%d\n",
                           target.c_str(), WiFi.RSSI(i), WiFi.channel(i), enc);
             Serial.printf("WiFi: SSID match auth=%s\n", wifiEncToStr(enc));
+
+            const int rssi = WiFi.RSSI(i);
+            if (rssi > bestRssi) {
+                bestRssi = rssi;
+                target_channel = WiFi.channel(i);
+                const uint8_t* bssid = WiFi.BSSID(i);
+                if (bssid) {
+                    memcpy(target_bssid, bssid, 6);
+                    have_target_bssid = true;
+                } else {
+                    have_target_bssid = false;
+                }
+            }
         }
     }
-    if (!found) Serial.printf("WiFi: SSID '%s' not found in scan\n", target.c_str());
+    if (!found) {
+        Serial.printf("WiFi: SSID '%s' not found in scan\n", target.c_str());
+    } else if (have_target_bssid && target_channel > 0) {
+        Serial.printf("WiFi: best BSSID %02X:%02X:%02X:%02X:%02X:%02X ch=%d (RSSI=%d)\n",
+                      target_bssid[0], target_bssid[1], target_bssid[2],
+                      target_bssid[3], target_bssid[4], target_bssid[5],
+                      (int)target_channel, bestRssi);
+    }
     WiFi.scanDelete();
 }
 
@@ -548,7 +572,15 @@ void connectWiFi() {
     WiFi.setSleep(false);
     // Quick scan first so we can report auth/mode mismatches (WPA3-only, no AP found, etc.).
     logScanForSsidOnce(WIFI_SSID);
-    WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
+    if (have_target_bssid && target_channel > 0) {
+        Serial.printf("WiFi: connecting with BSSID lock %02X:%02X:%02X:%02X:%02X:%02X ch=%d\n",
+                      target_bssid[0], target_bssid[1], target_bssid[2],
+                      target_bssid[3], target_bssid[4], target_bssid[5],
+                      (int)target_channel);
+        WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str(), target_channel, target_bssid, true);
+    } else {
+        WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
+    }
     unsigned long t0 = millis();
     while (WiFi.status() != WL_CONNECTED && (uint32_t)(millis() - t0) < WIFI_CONNECT_TIMEOUT_MS) delay(200);
     Serial.printf("WiFi: connect result status=%d (%s)\n", (int)WiFi.status(), wlStatusToStr(WiFi.status()));
