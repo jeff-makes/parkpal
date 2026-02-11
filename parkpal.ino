@@ -20,6 +20,14 @@
 
 #include "parkpal_types.h"
 
+// ---- Logging ----
+// Set to 1 to enable verbose Serial debug logs (Wi-Fi scans, event spam, etc.)
+#ifndef PARKPAL_DEBUG
+#define PARKPAL_DEBUG 0
+#endif
+#define DBG_PRINTF(...) do { if (PARKPAL_DEBUG) Serial.printf(__VA_ARGS__); } while (0)
+#define DBG_PRINTLN(x) do { if (PARKPAL_DEBUG) Serial.println(x); } while (0)
+
 // ---- WiFi & API ----
 // Provisioned at runtime (AP captive portal). Stored in NVS (Preferences).
 static String WIFI_SSID;
@@ -28,7 +36,7 @@ static String API_BASE_URL; // e.g. https://your-worker.your-subdomain.workers.d
 
 // --- WiFi diagnostics ---
 static volatile uint8_t last_wifi_disconnect_reason = 0; // wifi_err_reason_t
-static bool wifi_scan_logged_this_boot = false;
+static unsigned long last_wifi_scan_ms = 0;
 static bool have_target_bssid = false;
 static uint8_t target_bssid[6] = {0};
 static int32_t target_channel = 0;
@@ -88,35 +96,37 @@ static const char* wifiEncToStr(int enc) {
 }
 
 static void logSuspiciousStringBytes(const char* label, const String& s) {
+    if (!PARKPAL_DEBUG) return;
     bool any = false;
     for (unsigned i = 0; i < s.length(); i++) {
         uint8_t b = (uint8_t)s.charAt(i);
         if (b < 0x20 || b > 0x7E) {
-            if (!any) Serial.printf("%s: non-ASCII bytes at:", label);
-            Serial.printf(" [%u]=0x%02X", i, (unsigned)b);
+            if (!any) DBG_PRINTF("%s: non-ASCII bytes at:", label);
+            DBG_PRINTF(" [%u]=0x%02X", i, (unsigned)b);
             any = true;
         }
     }
-    if (any) Serial.println();
+    if (any) DBG_PRINTLN("");
     if (s.length() && (s.charAt(0) == ' ' || s.charAt(s.length() - 1) == ' ')) {
-        Serial.printf("%s: WARNING leading/trailing space detected\n", label);
+        DBG_PRINTF("%s: WARNING leading/trailing space detected\n", label);
     }
 }
 
-static void logScanForSsidOnce(const String& target) {
-    if (wifi_scan_logged_this_boot) return;
-    wifi_scan_logged_this_boot = true;
+static void scanForSsidIfNeeded(const String& target, bool force = false) {
+    const unsigned long nowMs = millis();
+    if (!force && last_wifi_scan_ms != 0 && (uint32_t)(nowMs - last_wifi_scan_ms) < 5UL * 60UL * 1000UL) return;
+    last_wifi_scan_ms = nowMs;
 
-    Serial.printf("WiFi: scanning for SSID... (mode=%d)\n", (int)WiFi.getMode());
+    DBG_PRINTF("WiFi: scanning for SSID... (mode=%d)\n", (int)WiFi.getMode());
     int n = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true);
     if (n < 0) {
-        Serial.printf("WiFi: scan failed (%d). Retrying...\n", n);
+        DBG_PRINTF("WiFi: scan failed (%d). Retrying...\n", n);
         delay(200);
         WiFi.mode(WIFI_STA);
         delay(200);
         n = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true);
     }
-    Serial.printf("WiFi: scan complete, found %d networks\n", n);
+    DBG_PRINTF("WiFi: scan complete, found %d networks\n", n);
     if (n <= 0) {
         WiFi.scanDelete();
         return;
@@ -128,9 +138,9 @@ static void logScanForSsidOnce(const String& target) {
         if (WiFi.SSID(i) == target) {
             found = true;
             const int enc = (int)WiFi.encryptionType(i);
-            Serial.printf("WiFi: SSID match '%s' RSSI=%d ch=%d enc=%d\n",
-                          target.c_str(), WiFi.RSSI(i), WiFi.channel(i), enc);
-            Serial.printf("WiFi: SSID match auth=%s\n", wifiEncToStr(enc));
+            DBG_PRINTF("WiFi: SSID match '%s' RSSI=%d ch=%d enc=%d\n",
+                       target.c_str(), WiFi.RSSI(i), WiFi.channel(i), enc);
+            DBG_PRINTF("WiFi: SSID match auth=%s\n", wifiEncToStr(enc));
 
             const int rssi = WiFi.RSSI(i);
             if (rssi > bestRssi) {
@@ -147,12 +157,12 @@ static void logScanForSsidOnce(const String& target) {
         }
     }
     if (!found) {
-        Serial.printf("WiFi: SSID '%s' not found in scan\n", target.c_str());
+        DBG_PRINTF("WiFi: SSID '%s' not found in scan\n", target.c_str());
     } else if (have_target_bssid && target_channel > 0) {
-        Serial.printf("WiFi: best BSSID %02X:%02X:%02X:%02X:%02X:%02X ch=%d (RSSI=%d)\n",
-                      target_bssid[0], target_bssid[1], target_bssid[2],
-                      target_bssid[3], target_bssid[4], target_bssid[5],
-                      (int)target_channel, bestRssi);
+        DBG_PRINTF("WiFi: best BSSID %02X:%02X:%02X:%02X:%02X:%02X ch=%d (RSSI=%d)\n",
+                   target_bssid[0], target_bssid[1], target_bssid[2],
+                   target_bssid[3], target_bssid[4], target_bssid[5],
+                   (int)target_channel, bestRssi);
     }
     WiFi.scanDelete();
 }
@@ -496,17 +506,36 @@ static void scheduleRestart(uint32_t delayMs) {
     restart_at_ms = millis() + delayMs;
 }
 
+static void resetWiFiTarget() {
+    have_target_bssid = false;
+    memset(target_bssid, 0, sizeof(target_bssid));
+    target_channel = 0;
+    last_wifi_scan_ms = 0;
+}
+
 static void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+    static uint8_t lastPrintedReason = 0;
+    static unsigned long lastPrintedMs = 0;
     switch (event) {
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             last_wifi_disconnect_reason = info.wifi_sta_disconnected.reason;
-            Serial.printf("WiFi event: STA_DISCONNECTED reason=%u (%s)\n", (unsigned)last_wifi_disconnect_reason, wifiReasonToStr(last_wifi_disconnect_reason));
+            if (PARKPAL_DEBUG) {
+                DBG_PRINTF("WiFi event: STA_DISCONNECTED reason=%u (%s)\n",
+                           (unsigned)last_wifi_disconnect_reason, wifiReasonToStr(last_wifi_disconnect_reason));
+            } else {
+                const unsigned long now = millis();
+                if (lastPrintedReason != last_wifi_disconnect_reason || lastPrintedMs == 0 || (uint32_t)(now - lastPrintedMs) > 5000) {
+                    Serial.printf("WiFi disconnected: %s (%u)\n", wifiReasonToStr(last_wifi_disconnect_reason), (unsigned)last_wifi_disconnect_reason);
+                    lastPrintedReason = last_wifi_disconnect_reason;
+                    lastPrintedMs = now;
+                }
+            }
             break;
         case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-            Serial.println("WiFi event: STA_CONNECTED");
+            DBG_PRINTLN("WiFi event: STA_CONNECTED");
             break;
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-            Serial.printf("WiFi event: GOT_IP %s\n", WiFi.localIP().toString().c_str());
+            Serial.printf("WiFi connected: %s\n", WiFi.localIP().toString().c_str());
             kickNTP();
             break;
         default:
@@ -535,6 +564,7 @@ static void saveProvisioningKeys(const String& ssid, const String& pass, const S
     prefs.putBool("just_provisioned", true);
     prefs.end();
     loadProvisioningKeys();
+    resetWiFiTarget();
 }
 
 static void clearJustProvisionedFlag() {
@@ -554,6 +584,7 @@ static void wipeProvisioningKeys(bool wipeConfigJson) {
     if (wipeConfigJson) prefs.remove("config_json");
     prefs.end();
     loadProvisioningKeys();
+    resetWiFiTarget();
 }
 
 static bool isProvisioned() {
@@ -563,7 +594,7 @@ static bool isProvisioned() {
 // -------------------- Wi-Fi / NTP --------------------
 void connectWiFi() {
     if (WIFI_SSID.length() == 0) return;
-    Serial.printf("WiFi: begin connect (ssid_len=%u pass_len=%u)\n", (unsigned)WIFI_SSID.length(), (unsigned)WIFI_PASS.length());
+    DBG_PRINTF("WiFi: begin connect (ssid_len=%u pass_len=%u)\n", (unsigned)WIFI_SSID.length(), (unsigned)WIFI_PASS.length());
     logSuspiciousStringBytes("WiFi SSID", WIFI_SSID);
     logSuspiciousStringBytes("WiFi PASS", WIFI_PASS);
     WiFi.mode(WIFI_STA);
@@ -571,21 +602,21 @@ void connectWiFi() {
     WiFi.persistent(false);
     WiFi.setSleep(false);
     // Quick scan first so we can report auth/mode mismatches (WPA3-only, no AP found, etc.).
-    logScanForSsidOnce(WIFI_SSID);
+    scanForSsidIfNeeded(WIFI_SSID, /*force=*/true);
     if (have_target_bssid && target_channel > 0) {
-        Serial.printf("WiFi: connecting with BSSID lock %02X:%02X:%02X:%02X:%02X:%02X ch=%d\n",
-                      target_bssid[0], target_bssid[1], target_bssid[2],
-                      target_bssid[3], target_bssid[4], target_bssid[5],
-                      (int)target_channel);
+        DBG_PRINTF("WiFi: connecting with BSSID lock %02X:%02X:%02X:%02X:%02X:%02X ch=%d\n",
+                   target_bssid[0], target_bssid[1], target_bssid[2],
+                   target_bssid[3], target_bssid[4], target_bssid[5],
+                   (int)target_channel);
         WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str(), target_channel, target_bssid, true);
     } else {
         WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
     }
     unsigned long t0 = millis();
     while (WiFi.status() != WL_CONNECTED && (uint32_t)(millis() - t0) < WIFI_CONNECT_TIMEOUT_MS) delay(200);
-    Serial.printf("WiFi: connect result status=%d (%s)\n", (int)WiFi.status(), wlStatusToStr(WiFi.status()));
+    DBG_PRINTF("WiFi: connect result status=%d (%s)\n", (int)WiFi.status(), wlStatusToStr(WiFi.status()));
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.printf("WiFi: last disconnect reason=%u (%s)\n", (unsigned)last_wifi_disconnect_reason, wifiReasonToStr(last_wifi_disconnect_reason));
+        DBG_PRINTF("WiFi: last disconnect reason=%u (%s)\n", (unsigned)last_wifi_disconnect_reason, wifiReasonToStr(last_wifi_disconnect_reason));
     }
     if (WiFi.status() == WL_CONNECTED) clearJustProvisionedFlag();
 }
@@ -599,8 +630,15 @@ bool ensureWiFiConnected(uint32_t timeoutMs = 0) {
     if (lastAttemptMs == 0 || (uint32_t)(now - lastAttemptMs) >= WIFI_RECONNECT_INTERVAL_MS) {
         lastAttemptMs = now;
         WiFi.disconnect(false);
-        WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
-        Serial.printf("WiFi: reconnect attempt (status=%d)\n", (int)WiFi.status());
+        // If we have a known-good BSSID/channel (common on mesh Wi-Fi), prefer it.
+        // Occasionally re-scan to adapt if the user moves the device or APs change.
+        scanForSsidIfNeeded(WIFI_SSID, /*force=*/!have_target_bssid);
+        if (have_target_bssid && target_channel > 0) {
+            WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str(), target_channel, target_bssid, true);
+        } else {
+            WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
+        }
+        DBG_PRINTF("WiFi: reconnect attempt (status=%d)\n", (int)WiFi.status());
     }
 
     if (timeoutMs == 0) return false;
@@ -1423,9 +1461,11 @@ void setup() {
     Serial.println();
     Serial.println("=== ParkPal boot ===");
     Serial.printf("Provisioned: %s\n", isProvisioned() ? "yes" : "no");
-    Serial.printf("Just provisioned: %s\n", just_provisioned ? "yes" : "no");
-    if (WIFI_SSID.length()) Serial.printf("WiFi SSID: %s\n", WIFI_SSID.c_str());
-    if (API_BASE_URL.length()) Serial.printf("API Base: %s\n", API_BASE_URL.c_str());
+    if (PARKPAL_DEBUG) {
+        Serial.printf("Just provisioned: %s\n", just_provisioned ? "yes" : "no");
+        if (WIFI_SSID.length()) Serial.printf("WiFi SSID: %s\n", WIFI_SSID.c_str());
+        if (API_BASE_URL.length()) Serial.printf("API Base: %s\n", API_BASE_URL.c_str());
+    }
     if (!isProvisioned()) {
         startSetupMode(false);
         startWeb();
@@ -1433,28 +1473,29 @@ void setup() {
     }
 
     connectWiFi();
-    Serial.printf("WiFi status after connect: %d\n", (int)WiFi.status());
+    DBG_PRINTF("WiFi status after connect: %d\n", (int)WiFi.status());
     if (WiFi.status() != WL_CONNECTED && just_provisioned) {
-        Serial.println("WiFi connect failed after provisioning; returning to setup mode.");
+        DBG_PRINTLN("WiFi connect failed after provisioning; returning to setup mode.");
         startSetupMode(false);
         startWeb();
         return;
     }
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.printf("WiFi connected, IP: %s\n", WiFi.localIP().toString().c_str());
         initNTP();
     } else {
-        Serial.println("WiFi not connected; skipping NTP sync.");
+        DBG_PRINTLN("WiFi not connected; skipping NTP sync.");
     }
     startWeb();
     time_t now;
     time(&now);
     struct tm* timeinfo = localtime(&now);
-    Serial.println("--- Current Local Time (startup default) ---");
-    Serial.print(asctime(timeinfo));
-    Serial.println("--------------------------------------------");
+    if (PARKPAL_DEBUG) {
+        Serial.println("--- Current Local Time (startup default) ---");
+        Serial.print(asctime(timeinfo));
+        Serial.println("--------------------------------------------");
+    }
     migrateResolveIdsIfNeeded();
-    if (MDNS.begin("parkpal")) Serial.println("mDNS started: http://parkpal.local/");
+    if (MDNS.begin("parkpal")) DBG_PRINTLN("mDNS started: http://parkpal.local/");
     IPAddress ip = WiFi.localIP();
     String ipStr = ip.toString();
     display.setFullWindow();
@@ -1470,7 +1511,7 @@ void setup() {
 
 void loop() {
     if (pending_restart && (int32_t)(millis() - restart_at_ms) >= 0) {
-        Serial.println("Restarting now...");
+        DBG_PRINTLN("Restarting now...");
         delay(50);
         ESP.restart();
     }
