@@ -353,7 +353,8 @@ async function fetchParkSummary(env, parkId, parkEntry, units) {
   }
 
   // Fetch weather using park-specific coords
-  let weather = { temp: 0, desc: "", sunrise: 0, sunset: 0 };
+  // OpenWeather condition codes: https://openweathermap.org/weather-conditions
+  let weather = { temp: 0, desc: "", code: 0, main: "", sunrise: 0, sunset: 0 };
   try {
     const { lat, lon } = parkEntry.coords;
     const w = await fetchJSON(
@@ -364,6 +365,8 @@ async function fetchParkSummary(env, parkId, parkEntry, units) {
     weather = {
       temp: Math.round(w?.main?.temp ?? 0),
       desc: (w?.weather?.[0]?.description || "").toLowerCase(),
+      code: Number(w?.weather?.[0]?.id ?? 0) || 0,
+      main: String(w?.weather?.[0]?.main || ""),
       sunrise: w?.sys?.sunrise ?? 0,
       sunset: w?.sys?.sunset ?? 0
     };
