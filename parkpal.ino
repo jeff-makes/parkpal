@@ -1173,7 +1173,11 @@ static void startSetupMode(bool wipe) {
     if (wipe) wipeProvisioningKeys(true);
     in_setup_mode = true;
 
-    WiFi.disconnect(true);
+    // Switching Wi-Fi modes while the async webserver is live can trigger lwIP asserts
+    // if we fully turn Wi-Fi off. Keep the TCP/IP stack up; just move into AP mode.
+    dnsServer.stop();
+    WiFi.disconnect(false);
+    WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_AP);
 
     setup_ap_ssid = "ParkPal-Setup-" + randomAlphaNum(4);
@@ -1212,12 +1216,13 @@ void setup() {
     display.setRotation(4);
 
     loadProvisioningKeys();
-    startWeb();
     if (!isProvisioned()) {
         startSetupMode(false);
+        startWeb();
         return;
     }
 
+    startWeb();
     connectWiFi();
     initNTP();
     time_t now;
@@ -1327,7 +1332,7 @@ void loop() {
                 api_fail_streak++;
                 if (api_fail_streak >= API_FAIL_STREAK_WIFI_RESET) {
                     api_fail_streak = 0;
-                    WiFi.disconnect(true);
+                    WiFi.disconnect(false);
                     delay(250);
                     connectWiFi();
                     kickNTP();
