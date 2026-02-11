@@ -88,10 +88,20 @@ static void logScanForSsidOnce(const String& target) {
     if (wifi_scan_logged_this_boot) return;
     wifi_scan_logged_this_boot = true;
 
-    Serial.println("WiFi: scanning for SSID...");
+    Serial.printf("WiFi: scanning for SSID... (mode=%d)\n", (int)WiFi.getMode());
     int n = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true);
+    if (n < 0) {
+        Serial.printf("WiFi: scan failed (%d). Retrying...\n", n);
+        delay(200);
+        WiFi.mode(WIFI_STA);
+        delay(200);
+        n = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true);
+    }
     Serial.printf("WiFi: scan complete, found %d networks\n", n);
-    if (n <= 0) return;
+    if (n <= 0) {
+        WiFi.scanDelete();
+        return;
+    }
 
     bool found = false;
     for (int i = 0; i < n; i++) {
@@ -104,6 +114,7 @@ static void logScanForSsidOnce(const String& target) {
         }
     }
     if (!found) Serial.printf("WiFi: SSID '%s' not found in scan\n", target.c_str());
+    WiFi.scanDelete();
 }
 
 static String normApiBaseUrl(String s) {
@@ -517,13 +528,14 @@ void connectWiFi() {
     WiFi.setAutoReconnect(true);
     WiFi.persistent(false);
     WiFi.setSleep(false);
+    // Quick scan first so we can report auth/mode mismatches (WPA3-only, no AP found, etc.).
+    logScanForSsidOnce(WIFI_SSID);
     WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
     unsigned long t0 = millis();
     while (WiFi.status() != WL_CONNECTED && (uint32_t)(millis() - t0) < WIFI_CONNECT_TIMEOUT_MS) delay(200);
     Serial.printf("WiFi: connect result status=%d (%s)\n", (int)WiFi.status(), wlStatusToStr(WiFi.status()));
     if (WiFi.status() != WL_CONNECTED) {
         Serial.printf("WiFi: last disconnect reason=%u (%s)\n", (unsigned)last_wifi_disconnect_reason, wifiReasonToStr(last_wifi_disconnect_reason));
-        logScanForSsidOnce(WIFI_SSID);
     }
     if (WiFi.status() == WL_CONNECTED) clearJustProvisionedFlag();
 }
