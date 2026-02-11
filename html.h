@@ -1027,22 +1027,22 @@ let cfg = {};
 let rideCache = {};
 let currentPick = { parkId: null, slot: null };
 
-// Popular/iconic ride suggestions used to pre-fill the first 5 slots when a park is first enabled.
+// Popular/iconic ride suggestions used to pre-fill the first 6 slots when a park is first enabled.
 // Matching is best-effort (by name tokens) against the live rides list from the Worker.
 const POPULAR_RIDES = {
   // WDW
-  6:  [ ['tron'], ['seven','dwarfs'], ['space','mountain'], ['haunted','mansion'], ['pirates'] ], // Magic Kingdom
-  5:  [ ['guardians'], ['remy'], ['test','track'], ['soarin'], ['frozen'] ],                      // EPCOT
-  7:  [ ['rise','resistance'], ['slinky'], ['runaway','railway'], ['smugglers'], ['tower'] ],     // Hollywood Studios
-  8:  [ ['flight','passage'], ['navi'], ['kilimanjaro'], ['everest'], ['dinosaur'] ],             // Animal Kingdom
+  6:  [ ['tron'], ['seven','dwarfs'], ['space','mountain'], ['haunted','mansion'], ['pirates'], ['jungle','cruise'] ], // Magic Kingdom
+  5:  [ ['guardians'], ['remy'], ['test','track'], ['soarin'], ['frozen'], ['spaceship','earth'] ],                     // EPCOT
+  7:  [ ['rise','resistance'], ['slinky'], ['runaway','railway'], ['smugglers'], ['tower'], ['rock','roller'] ],        // Hollywood Studios
+  8:  [ ['flight','passage'], ['navi'], ['kilimanjaro'], ['everest'], ['dinosaur'], ['kali'] ],                         // Animal Kingdom
 
   // Disneyland Resort
-  16: [ ['rise','resistance'], ['indiana'], ['space','mountain'], ['haunted','mansion'], ['pirates'] ], // Disneyland
-  17: [ ['radiator'], ['mission','breakout'], ['incredicoaster'], ['web','slingers'], ['soarin'] ],     // DCA
+  16: [ ['rise','resistance'], ['indiana'], ['space','mountain'], ['haunted','mansion'], ['pirates'], ['matterhorn'] ], // Disneyland
+  17: [ ['radiator'], ['mission','breakout'], ['incredicoaster'], ['web','slingers'], ['soarin'], ['toy','story'] ],    // DCA
 
   // Tokyo Disney Resort
-  274:[ ['beauty','beast'], ['pooh'], ['monsters'], ['big','thunder'], ['splash'] ],              // Tokyo Disneyland
-  275:[ ['journey','center'], ['soaring'], ['toy','story'], ['indiana'], ['tower'] ]              // Tokyo DisneySea
+  274:[ ['beauty','beast'], ['pooh'], ['monsters'], ['big','thunder'], ['splash'], ['space','mountain'] ],              // Tokyo Disneyland
+  275:[ ['journey','center'], ['soaring'], ['toy','story'], ['indiana'], ['tower'], ['raging','spirits'] ]              // Tokyo DisneySea
 };
 
 function normName(s) {
@@ -1084,8 +1084,8 @@ async function maybeAutofillPopularRides(parkId) {
   const ids = cfg.rides_by_park_ids[parkId];
   const labels = cfg.rides_by_park_labels[parkId];
 
-  // Only auto-fill if the first 5 slots are all empty (don't override user choices).
-  for (let i = 0; i < 5; i++) {
+  // Only auto-fill if the first 6 slots are all empty (don't override user choices).
+  for (let i = 0; i < 6; i++) {
     if ((ids[i] || 0) !== 0 || (labels[i] || '').trim().length) return;
   }
 
@@ -1095,7 +1095,7 @@ async function maybeAutofillPopularRides(parkId) {
   const chosenIds = new Set(ids.filter(x => x > 0));
   let changed = false;
 
-  for (let i = 0; i < 5 && i < suggestions.length; i++) {
+  for (let i = 0; i < 6 && i < suggestions.length; i++) {
     const ride = findRideByTokens(rides, suggestions[i]);
     if (!ride) continue;
     if (chosenIds.has(ride.id)) continue;
@@ -1108,7 +1108,7 @@ async function maybeAutofillPopularRides(parkId) {
   if (!changed) return;
 
   // If slots are currently rendered, update them live.
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 6; i++) {
     const nameEl = $(`slot-name-${parkId}-${i}`);
     if (!nameEl) continue;
     const label = labels[i] || '';
