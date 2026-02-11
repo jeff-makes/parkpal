@@ -19,6 +19,7 @@ Keep this section up to date as work lands so you can resume quickly in a new se
 - [x] Firmware: Phase 0 scrub (remove hardcoded secrets/personal defaults; remove replay UI/logic). (commit: `32461c5`)
 - [x] Firmware: sync firmware + UI to Worker v1 response shapes (`/v1/rides` and `/v1/summary`). (commit: `8f73ad9`)
 - [x] Firmware: add AP captive portal provisioning (Wi‑Fi + `api_base_url`) + BOOT long-press factory reset. (commit: `aef7d02`)
+- [x] Firmware: Arduino IDE build fix (move firmware types into `parkpal_types.h` to avoid auto-prototype issues). (commit: `4b60236`)
 - [x] Repo: add MIT `LICENSE`, `.gitignore`, and a self-hosted README skeleton. (commit: `a962fb2`)
 - [x] Destinations: add California (Disneyland Resort) to `parks.json` and UI resort list. (commit: `d86b0bb`)
 - [x] Docs: make this plan internally consistent + executable. (commit: `df30b90`)
