@@ -1068,12 +1068,22 @@ void startWeb() {
         req->send(200, "application/json", s);
     });
     server.on("/api/config", HTTP_POST, [](AsyncWebServerRequest * req) {}, NULL, [](AsyncWebServerRequest * req, uint8_t * data, size_t len, size_t index, size_t total) {
-        static String body;
-        if (index == 0) body = "";
-        body.reserve(total);
-        body.concat((const char*)data, len);
+        String* body = (String*)req->_tempObject;
+        if (index == 0) {
+            delete body;
+            body = new String();
+            body->reserve(total);
+            req->_tempObject = body;
+        }
+        if (!body) {
+            req->send(500, "text/plain", "ERR");
+            return;
+        }
+        body->concat((const char*)data, len);
         if (index + len == total) {
-            bool ok = saveConfigJson(body);
+            const bool ok = saveConfigJson(*body);
+            delete body;
+            req->_tempObject = nullptr;
             req->send(ok ? 200 : 500, "text/plain", ok ? "OK" : "ERR");
         }
     });
@@ -1115,14 +1125,24 @@ void startWeb() {
 
     server.on("/api/provision", HTTP_POST, [](AsyncWebServerRequest * req) {}, NULL,
       [](AsyncWebServerRequest * req, uint8_t * data, size_t len, size_t index, size_t total) {
-        static String body;
-        if (index == 0) body = "";
-        body.reserve(total);
-        body.concat((const char*)data, len);
+        String* body = (String*)req->_tempObject;
+        if (index == 0) {
+            delete body;
+            body = new String();
+            body->reserve(total);
+            req->_tempObject = body;
+        }
+        if (!body) {
+            req->send(500, "application/json", "{\"error\":\"internal_error\"}");
+            return;
+        }
+        body->concat((const char*)data, len);
         if (index + len != total) return;
 
         DynamicJsonDocument doc(2048);
-        if (deserializeJson(doc, body) != DeserializationError::Ok) {
+        if (deserializeJson(doc, *body) != DeserializationError::Ok) {
+            delete body;
+            req->_tempObject = nullptr;
             req->send(400, "application/json", "{\"error\":\"bad_request\",\"details\":\"invalid JSON\"}");
             return;
         }
@@ -1132,14 +1152,20 @@ void startWeb() {
         ssid.trim();
         api = normApiBaseUrl(api);
         if (ssid.length() == 0) {
+            delete body;
+            req->_tempObject = nullptr;
             req->send(400, "application/json", "{\"error\":\"bad_request\",\"details\":\"missing wifi_ssid\"}");
             return;
         }
         if (api.length() == 0 || !api.startsWith("http")) {
+            delete body;
+            req->_tempObject = nullptr;
             req->send(400, "application/json", "{\"error\":\"bad_request\",\"details\":\"missing api_base_url\"}");
             return;
         }
         saveProvisioningKeys(ssid, pass, api);
+        delete body;
+        req->_tempObject = nullptr;
         req->send(200, "application/json", "{\"ok\":true}");
         delay(200);
         ESP.restart();

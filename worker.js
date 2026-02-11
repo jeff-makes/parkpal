@@ -234,7 +234,7 @@ async function cachePutRides(parkId, payload) {
 // Fetch rides for a single park from Queue-Times, normalize, and cache
 async function fetchAndCacheRides(env, parkId, parkEntry) {
   try {
-    const j = await fetchJSON(parkEntry.queue_times_url, { headers: { "User-Agent": "ParkPal/1.0" } }, env.PREFETCH_TIMEOUT_MS);
+  const j = await fetchJSON(parkEntry.queue_times_url, { headers: { "User-Agent": "ParkPal/1.0" } }, env.UPSTREAM_TIMEOUT_MS);
     const byId = new Map();
 
     // Normalize: merge lands[].rides + top-level rides[]
@@ -317,7 +317,7 @@ async function fetchParkSummary(env, parkId, parkEntry, units) {
   // Fetch rides from Queue-Times
   let rides = [];
   try {
-    const j = await fetchJSON(parkEntry.queue_times_url, { headers: { "User-Agent": "ParkPal/1.0" } }, env.PREFETCH_TIMEOUT_MS);
+  const j = await fetchJSON(parkEntry.queue_times_url, { headers: { "User-Agent": "ParkPal/1.0" } }, env.UPSTREAM_TIMEOUT_MS);
     const byId = new Map();
 
     if (j && Array.isArray(j.lands)) {
@@ -359,7 +359,7 @@ async function fetchParkSummary(env, parkId, parkEntry, units) {
     const w = await fetchJSON(
       `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=${units}&appid=${env.OWM_API_KEY}`,
       {},
-      env.PREFETCH_TIMEOUT_MS
+      env.UPSTREAM_TIMEOUT_MS
     );
     weather = {
       temp: Math.round(w?.main?.temp ?? 0),

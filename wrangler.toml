@@ -3,4 +3,4 @@ main = "worker.js"
 compatibility_date = "2026-02-10"
 
 [vars]
-PREFETCH_TIMEOUT_MS = "4000"
+UPSTREAM_TIMEOUT_MS = "4000"

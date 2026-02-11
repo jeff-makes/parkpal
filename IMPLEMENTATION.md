@@ -224,7 +224,7 @@ Future (explicitly deferred in v1):
 Worker requires:
 - Secret/env var: `OWM_API_KEY`
 - Optional env vars:
-  - `PREFETCH_TIMEOUT_MS` (defaults to 4000 if unset)
+  - `UPSTREAM_TIMEOUT_MS` (defaults to 4000 if unset)
 
 If using `wrangler.toml`, the minimal shape is:
 ```toml
@@ -233,7 +233,7 @@ main = "worker.js"
 compatibility_date = "2026-02-10"
 
 [vars]
-PREFETCH_TIMEOUT_MS = "4000"
+UPSTREAM_TIMEOUT_MS = "4000"
 ```
 
 Notes:

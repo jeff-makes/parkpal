@@ -1,5 +1,5 @@
 // html.h - ParkPal Web UI
-// Supports Walt Disney World (WDW) and Tokyo Disney Resort (TDR)
+// Supports Walt Disney World (WDW), Disneyland Resort (DLR), and Tokyo Disney Resort (TDR)
 
 static const char INDEX_HTML[] PROGMEM = R"html(
 <!DOCTYPE html>
@@ -883,6 +883,7 @@ static const char INDEX_HTML[] PROGMEM = R"html(
         <button class="preset-btn" data-preset="birthday">🎂 Birthday</button>
         <button class="preset-btn" data-preset="disney-wdw">🏰 Disney Trip (WDW)</button>
         <button class="preset-btn" data-preset="disney-tdr">🗼 Disney Trip (TDR)</button>
+        <button class="preset-btn" data-preset="disney-dlr">🏰 Disney Trip (DLR)</button>
         <button class="preset-btn" data-preset="custom" style="grid-column: span 2">✨ Custom Countdown</button>
       </div>
     </div>
@@ -1481,6 +1482,9 @@ function addCountdownFromPreset(preset) {
       break;
     case 'disney-tdr':
       template = { ...template, repeat: 'once', label: ['TOKYO DISNEY', 'TRIP COUNTDOWN'] };
+      break;
+    case 'disney-dlr':
+      template = { ...template, repeat: 'once', label: ['DISNEYLAND', 'TRIP COUNTDOWN'] };
       break;
     case 'custom':
       template = { ...template, label: ['MY', 'COUNTDOWN'] };
