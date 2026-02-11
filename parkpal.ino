@@ -29,6 +29,40 @@ static String API_BASE_URL; // e.g. https://your-worker.your-subdomain.workers.d
 // --- WiFi diagnostics ---
 static volatile uint8_t last_wifi_disconnect_reason = 0; // wifi_err_reason_t
 
+static const char* wlStatusToStr(wl_status_t s) {
+    switch (s) {
+        case WL_NO_SHIELD: return "NO_SHIELD";
+        case WL_IDLE_STATUS: return "IDLE";
+        case WL_NO_SSID_AVAIL: return "NO_SSID_AVAIL";
+        case WL_SCAN_COMPLETED: return "SCAN_COMPLETED";
+        case WL_CONNECTED: return "CONNECTED";
+        case WL_CONNECT_FAILED: return "CONNECT_FAILED";
+        case WL_CONNECTION_LOST: return "CONNECTION_LOST";
+        case WL_DISCONNECTED: return "DISCONNECTED";
+        default: return "UNKNOWN";
+    }
+}
+
+static const char* wifiReasonToStr(uint8_t r) {
+    // Common ESP32/Arduino disconnect reasons. Values differ slightly across core versions;
+    // keep this best-effort (unknown values still print as numbers).
+    switch (r) {
+        case 1: return "UNSPECIFIED";
+        case 2: return "AUTH_EXPIRE";
+        case 4: return "ASSOC_EXPIRE";
+        case 7: return "NOT_ASSOCED";
+        case 8: return "ASSOC_LEAVE";
+        case 15: return "4WAY_HANDSHAKE_TIMEOUT";
+        case 16: return "GROUP_KEY_TIMEOUT";
+        case 23: return "8021X_AUTH_FAILED";
+        case 201: return "NO_AP_FOUND";
+        case 202: return "AUTH_FAIL";
+        case 203: return "ASSOC_FAIL";
+        case 204: return "HANDSHAKE_TIMEOUT";
+        default: return "UNKNOWN";
+    }
+}
+
 static String normApiBaseUrl(String s) {
     s.trim();
     while (s.endsWith("/")) s.remove(s.length() - 1);
@@ -372,7 +406,7 @@ static void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     switch (event) {
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             last_wifi_disconnect_reason = info.wifi_sta_disconnected.reason;
-            Serial.printf("WiFi event: STA_DISCONNECTED reason=%u\n", (unsigned)last_wifi_disconnect_reason);
+            Serial.printf("WiFi event: STA_DISCONNECTED reason=%u (%s)\n", (unsigned)last_wifi_disconnect_reason, wifiReasonToStr(last_wifi_disconnect_reason));
             break;
         case ARDUINO_EVENT_WIFI_STA_CONNECTED:
             Serial.println("WiFi event: STA_CONNECTED");
@@ -443,9 +477,9 @@ void connectWiFi() {
     WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
     unsigned long t0 = millis();
     while (WiFi.status() != WL_CONNECTED && (uint32_t)(millis() - t0) < WIFI_CONNECT_TIMEOUT_MS) delay(200);
-    Serial.printf("WiFi: connect result status=%d\n", (int)WiFi.status());
+    Serial.printf("WiFi: connect result status=%d (%s)\n", (int)WiFi.status(), wlStatusToStr(WiFi.status()));
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.printf("WiFi: last disconnect reason=%u\n", (unsigned)last_wifi_disconnect_reason);
+        Serial.printf("WiFi: last disconnect reason=%u (%s)\n", (unsigned)last_wifi_disconnect_reason, wifiReasonToStr(last_wifi_disconnect_reason));
     }
     if (WiFi.status() == WL_CONNECTED) clearJustProvisionedFlag();
 }
@@ -1279,6 +1313,7 @@ void setup() {
     Serial.println();
     Serial.println("=== ParkPal boot ===");
     Serial.printf("Provisioned: %s\n", isProvisioned() ? "yes" : "no");
+    Serial.printf("Just provisioned: %s\n", just_provisioned ? "yes" : "no");
     if (WIFI_SSID.length()) Serial.printf("WiFi SSID: %s\n", WIFI_SSID.c_str());
     if (API_BASE_URL.length()) Serial.printf("API Base: %s\n", API_BASE_URL.c_str());
     if (!isProvisioned()) {
@@ -1436,7 +1471,13 @@ void loop() {
                     lastTick = millis() - (REFRESH_MS - API_ERROR_RETRY_MS);
                     renderMessage(last_http_code > 0 ? ("API HTTP " + String(last_http_code)) : "API Error", MSG_FONT);
                 } else {
-                    renderMessage("WiFi offline", MSG_FONT);
+                    String msg = "WiFi offline";
+                    if (last_wifi_disconnect_reason) {
+                        msg += " (";
+                        msg += wifiReasonToStr(last_wifi_disconnect_reason);
+                        msg += ")";
+                    }
+                    renderMessage(msg, MSG_FONT);
                 }
             }
         } else { // Countdown mode
