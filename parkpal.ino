@@ -986,7 +986,8 @@ static const unsigned char* weatherIconBitmap(int code, const String& desc, int1
     if (code >= 701 && code <= 781) { outH = 30; return ICON_CLOUDY; } // mist/fog/etc
     if (code == 800) return ICON_SUNNY; // clear
     if (code == 801) return ICON_PARTLY_CLOUDY; // few clouds
-    if (code >= 802 && code <= 804) { outH = 30; return ICON_CLOUDY; } // clouds
+    if (code == 802) return ICON_PARTLY_CLOUDY; // scattered clouds (more "partly" than "overcast")
+    if (code >= 803 && code <= 804) { outH = 30; return ICON_CLOUDY; } // broken/overcast clouds
 
     // Fallback: map by description text (keeps older Workers working).
     String d = desc;
@@ -998,6 +999,7 @@ static const unsigned char* weatherIconBitmap(int code, const String& desc, int1
     if (d.indexOf("snow") >= 0) { outH = 30; return ICON_CLOUDY; }
     if (d.indexOf("clear") >= 0) return ICON_SUNNY;
     if (d.indexOf("few clouds") >= 0) return ICON_PARTLY_CLOUDY;
+    if (d.indexOf("scattered") >= 0) return ICON_PARTLY_CLOUDY;
     if (d.indexOf("cloud") >= 0) { outH = 30; return ICON_CLOUDY; }
     if (d.indexOf("mist") >= 0 || d.indexOf("fog") >= 0 || d.indexOf("haze") >= 0) { outH = 30; return ICON_CLOUDY; }
     return ICON_UNKNOWN;
