@@ -19,6 +19,7 @@
 #include <esp_system.h>
 
 #include "parkpal_types.h"
+#include "WeatherIcons.h"
 
 // ---- Logging ----
 // Set to 1 to enable verbose Serial debug logs (Wi-Fi scans, event spam, etc.)
@@ -972,6 +973,36 @@ void drawDegreeMark(int16_t cx, int16_t cy, int16_t outerR, uint16_t color) {
     if (innerR > 0) display.fillCircle(cx, cy, innerR, GxEPD_WHITE);
 }
 
+static const unsigned char* weatherIconBitmap(int code, const String& desc, int16_t& outW, int16_t& outH) {
+    // Default to icon dimensions that match the bitmaps in WeatherIcons.h.
+    // Most icons are 64x32 (256 bytes). ICON_CLOUDY is 60x32 (240 bytes).
+    outW = 64;
+    outH = 32;
+
+    // Prefer OpenWeather condition code if available.
+    if (code >= 200 && code <= 232) return ICON_THUNDERSTORM; // thunderstorm
+    if (code >= 300 && code <= 531) return ICON_RAIN; // drizzle + rain
+    if (code >= 600 && code <= 622) { outW = 60; return ICON_CLOUDY; } // snow (closest we have)
+    if (code >= 701 && code <= 781) { outW = 60; return ICON_CLOUDY; } // mist/fog/etc
+    if (code == 800) return ICON_SUNNY; // clear
+    if (code == 801) return ICON_PARTLY_CLOUDY; // few clouds
+    if (code >= 802 && code <= 804) { outW = 60; return ICON_CLOUDY; } // clouds
+
+    // Fallback: map by description text (keeps older Workers working).
+    String d = desc;
+    d.toLowerCase();
+    if (d.indexOf("thunder") >= 0) return ICON_THUNDERSTORM;
+    if (d.indexOf("storm") >= 0) return ICON_THUNDERSTORM;
+    if (d.indexOf("rain") >= 0) return ICON_RAIN;
+    if (d.indexOf("drizzle") >= 0) return ICON_RAIN;
+    if (d.indexOf("snow") >= 0) { outW = 60; return ICON_CLOUDY; }
+    if (d.indexOf("clear") >= 0) return ICON_SUNNY;
+    if (d.indexOf("few clouds") >= 0) return ICON_PARTLY_CLOUDY;
+    if (d.indexOf("cloud") >= 0) { outW = 60; return ICON_CLOUDY; }
+    if (d.indexOf("mist") >= 0 || d.indexOf("fog") >= 0 || d.indexOf("haze") >= 0) { outW = 60; return ICON_CLOUDY; }
+    return ICON_UNKNOWN;
+}
+
 void drawCenterLine(int16_t baselineY, const String& s, const GFXfont* f, uint16_t color) {
     display.setFont(f);
     int16_t x1, y1;
@@ -1123,6 +1154,7 @@ String parks_lastFrameKey;
 void renderParks(const DynamicJsonDocument& doc, const int rideIds[6], const String rideLabels[6], const String& parkName, bool metricUnits, bool showTrip, const String& tripISO, const String& tripName, const String legacyFallback[6], const char* parksTz) {
     int temp = doc["weather"]["temp"] | 0;
     String desc = String(doc["weather"]["desc"] | "—");
+    int wcode = doc["weather"]["code"] | 0;
     struct Row {
         String name;
         bool open;
@@ -1244,9 +1276,14 @@ void renderParks(const DynamicJsonDocument& doc, const int rideIds[6], const Str
         int16_t unitX = degreeCx + degreeR + 4;
         drawText(unitX, currentY, unit, largeNumFont, GxEPD_BLACK);
 
-        int16_t descX = unitX + textWidth(unit, largeNumFont) + 10;
-        int16_t descMaxW = (W - M) - descX;
-        drawText(descX, currentY, clipToWidth(desc, subContentFont, descMaxW, true), subContentFont, GxEPD_BLACK);
+        // Replace verbose weather text with an icon (cleaner on e-ink).
+        int16_t iconW = 0, iconH = 0;
+        const unsigned char* bmp = weatherIconBitmap(wcode, desc, iconW, iconH);
+        int16_t iconX = unitX + textWidth(unit, largeNumFont) + 14;
+        int16_t iconY = by + (int16_t)max(0, ((int)bh - (int)iconH) / 2);
+        // Keep inside the right margin.
+        if (iconX + iconW > (W - M)) iconX = (W - M) - iconW;
+        display.drawBitmap(iconX, iconY, bmp, iconW, iconH, GxEPD_BLACK);
         
         // --- Ride List / Setup Instructions ---
         int16_t listHeaderY = dynamicHeaderHeight + 24;
