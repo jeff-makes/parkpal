@@ -1526,7 +1526,9 @@ void setup() {
     WiFi.onEvent(onWiFiEvent);
     pinMode(BOOT_PIN, INPUT_PULLUP);
     SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS);
-    display.init(115200, true, 2, false);
+    // GxEPD2 prints "Busy Timeout!" diagnostics when a serial baud is provided.
+    // Keep Serial output quiet for normal users; enable diagnostics only in debug builds.
+    display.init(PARKPAL_DEBUG ? 115200 : 0, true, 2, false);
     display.setRotation(4);
 
     loadProvisioningKeys();
