@@ -136,7 +136,7 @@ If ParkPal loses Wi-Fi for more than 5 minutes, it automatically falls back to s
 - **2.4 GHz only.** ESP32 can't join 5 GHz networks.
 - **WPA2-Personal (PSK) recommended.** WPA3-only or some “WPA2/WPA3 + PMF required” configs can break ESP32 clients.
 - **Captive portal / hotel Wi‑Fi won’t work** (no browser login flow on the device).
-- **Mesh Wi‑Fi:** if you have multiple access points broadcasting the same SSID, ParkPal automatically locks to the strongest AP (BSSID) to avoid handshake timeouts.
+- **Mesh Wi‑Fi:** if you have multiple access points broadcasting the same SSID, ParkPal locks to the strongest AP (BSSID) and will try another AP if the handshake fails.
 
 **`parkpal.local` doesn't work (especially on Android)**
 mDNS support varies by device. Android in particular often doesn't resolve `.local` names. Use the device's IP address instead — it's printed on the e-ink screen at startup and on the Serial monitor.
