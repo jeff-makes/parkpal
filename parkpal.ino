@@ -69,6 +69,21 @@ static const char* wifiReasonToStr(uint8_t r) {
     }
 }
 
+static const char* wifiEncToStr(int enc) {
+    // Values match ESP-IDF wifi_auth_mode_t in most Arduino-ESP32 versions.
+    switch (enc) {
+        case 0: return "OPEN";
+        case 1: return "WEP";
+        case 2: return "WPA_PSK";
+        case 3: return "WPA2_PSK";
+        case 4: return "WPA_WPA2_PSK";
+        case 5: return "WPA2_ENTERPRISE";
+        case 6: return "WPA3_PSK";
+        case 7: return "WPA2_WPA3_PSK";
+        default: return "UNKNOWN";
+    }
+}
+
 static void logScanForSsidOnce(const String& target) {
     if (wifi_scan_logged_this_boot) return;
     wifi_scan_logged_this_boot = true;
@@ -82,8 +97,10 @@ static void logScanForSsidOnce(const String& target) {
     for (int i = 0; i < n; i++) {
         if (WiFi.SSID(i) == target) {
             found = true;
+            const int enc = (int)WiFi.encryptionType(i);
             Serial.printf("WiFi: SSID match '%s' RSSI=%d ch=%d enc=%d\n",
-                          target.c_str(), WiFi.RSSI(i), WiFi.channel(i), (int)WiFi.encryptionType(i));
+                          target.c_str(), WiFi.RSSI(i), WiFi.channel(i), enc);
+            Serial.printf("WiFi: SSID match auth=%s\n", wifiEncToStr(enc));
         }
     }
     if (!found) Serial.printf("WiFi: SSID '%s' not found in scan\n", target.c_str());
