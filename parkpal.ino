@@ -1190,6 +1190,7 @@ static void startSetupMode(bool wipe) {
     // IMPORTANT: don't call `softAPdisconnect(true)` here (wifioff=true). That can tear down
     // lwIP internals while AsyncTCP tasks are still running, leading to `Invalid mbox` asserts.
     WiFi.softAPdisconnect(false);
+    delay(100); // let the WiFi event loop settle
     // Keep STA alive (harmless) to avoid churn in the underlying netif/tcpip plumbing.
     WiFi.mode(WIFI_AP_STA);
 
