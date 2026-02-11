@@ -930,14 +930,6 @@ void drawDegreeMark(int16_t cx, int16_t cy, int16_t outerR, uint16_t color) {
     if (innerR > 0) display.fillCircle(cx, cy, innerR, GxEPD_WHITE);
 }
 
-void drawMickeySilhouette(int cx, int cy, int r, uint16_t color) {
-    display.drawCircle(cx, cy, r, color);
-    display.fillCircle(cx, cy, r - 2, color);
-    int er = r * 0.45;
-    display.fillCircle(cx - r, cy - r, er, color);
-    display.fillCircle(cx + r, cy - r, er, color);
-}
-
 void drawCenterLine(int16_t baselineY, const String& s, const GFXfont* f, uint16_t color) {
     display.setFont(f);
     int16_t x1, y1;
@@ -1182,7 +1174,8 @@ void renderParks(const DynamicJsonDocument& doc, const int rideIds[6], const Str
                 drawText(M, contentY, "—", largeNumFont, GxEPD_RED);
             }
         } else {
-            drawMickeySilhouette(M + (MID_X - M) / 2, M + maxHeaderContentHeight / 2, 40, GxEPD_BLACK);
+            drawText(M, currentY, "PARKPAL", titleFont, GxEPD_BLACK);
+            drawText(M, contentY, "SETUP", largeDaysFont, GxEPD_BLACK);
         }
 
         // --- Right Column: Weather ---
@@ -1213,28 +1206,62 @@ void renderParks(const DynamicJsonDocument& doc, const int rideIds[6], const Str
         int16_t descMaxW = (W - M) - descX;
         drawText(descX, currentY, clipToWidth(desc, subContentFont, descMaxW, true), subContentFont, GxEPD_BLACK);
         
-        // --- Ride List ---
+        // --- Ride List / Setup Instructions ---
         int16_t listHeaderY = dynamicHeaderHeight + 30;
-        drawText(M, listHeaderY, parkName, titleFont, GxEPD_RED);
-
         const int16_t listTop = listHeaderY + lineHeight(titleFont) + 5;
-        const int16_t rowH = 42; // Tighten up row height
-        const int16_t waitColR = W - M;
-        int16_t y = listTop;
-        for (int i = 0; i < count; i++) {
-            if (y > (H - M)) break;
-            int16_t maxW = (W - M - M) - 140;
-            String name = clipToWidth(rows[i].name, subContentFont, maxW, true);
-            drawText(M, y, name, subContentFont, GxEPD_BLACK);
-            
-            if (rows[i].wait == -1) drawRight(waitColR, y, "Unavailable", titleFont, GxEPD_RED);
-            else if (rows[i].open) drawRight(waitColR, y, String(rows[i].wait) + " min", titleFont, GxEPD_BLACK);
-            else drawRight(waitColR, y, "Closed", titleFont, GxEPD_RED);
-            
-            if (i < count - 1) {
-                thickH(M, y + 10, W - M, GxEPD_BLACK);
+        if (count == 0) {
+            const int16_t top = dynamicHeaderHeight + 40;
+            const int16_t bottom = H - M;
+
+            if (!showTrip) {
+                const GFXfont* hFont = &FreeSansBold18pt7b;
+                const GFXfont* tFont = &FreeSans12pt7b;
+                const int16_t h1 = lineHeight(hFont);
+                const int16_t h2 = lineHeight(tFont);
+                const int16_t total = h1 + 10 + (h2 * 3);
+                int16_t y = top + max<int16_t>(0, (int16_t)((bottom - top - total) / 2)) + h1;
+                drawCenterLine(y, "GET STARTED", hFont, GxEPD_BLACK);
+                y += h1 + 10;
+                drawCenterLine(y, "Open parkpal.local", tFont, GxEPD_RED);
+                y += h2;
+                drawCenterLine(y, "on the same Wi-Fi network", tFont, GxEPD_BLACK);
+                y += h2;
+                drawCenterLine(y, "to set up your trip", tFont, GxEPD_BLACK);
+            } else {
+                const GFXfont* hFont = &FreeSansBold18pt7b;
+                const GFXfont* tFont = &FreeSans12pt7b;
+                const int16_t h1 = lineHeight(hFont);
+                const int16_t h2 = lineHeight(tFont);
+                const int16_t total = h1 + 10 + (h2 * 3);
+                int16_t y = top + max<int16_t>(0, (int16_t)((bottom - top - total) / 2)) + h1;
+                drawCenterLine(y, "NO RIDES YET", hFont, GxEPD_BLACK);
+                y += h1 + 10;
+                drawCenterLine(y, "Open parkpal.local", tFont, GxEPD_RED);
+                y += h2;
+                drawCenterLine(y, "to choose a park + rides", tFont, GxEPD_BLACK);
+                y += h2;
+                drawCenterLine(y, "then hit Refresh", tFont, GxEPD_BLACK);
             }
-            y += rowH;
+        } else {
+            drawText(M, listHeaderY, parkName, titleFont, GxEPD_RED);
+            const int16_t rowH = 42; // Tighten up row height
+            const int16_t waitColR = W - M;
+            int16_t y = listTop;
+            for (int i = 0; i < count; i++) {
+                if (y > (H - M)) break;
+                int16_t maxW = (W - M - M) - 140;
+                String name = clipToWidth(rows[i].name, subContentFont, maxW, true);
+                drawText(M, y, name, subContentFont, GxEPD_BLACK);
+
+                if (rows[i].wait == -1) drawRight(waitColR, y, "Unavailable", titleFont, GxEPD_RED);
+                else if (rows[i].open) drawRight(waitColR, y, String(rows[i].wait) + " min", titleFont, GxEPD_BLACK);
+                else drawRight(waitColR, y, "Closed", titleFont, GxEPD_RED);
+
+                if (i < count - 1) {
+                    thickH(M, y + 10, W - M, GxEPD_BLACK);
+                }
+                y += rowH;
+            }
         }
     } while (display.nextPage());
 }
