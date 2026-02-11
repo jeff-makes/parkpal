@@ -18,6 +18,8 @@
 #include <vector>
 #include <esp_system.h>
 
+#include "parkpal_types.h"
+
 // ---- WiFi & API ----
 // Provisioned at runtime (AP captive portal). Stored in NVS (Preferences).
 static String WIFI_SSID;
@@ -87,46 +89,6 @@ AsyncWebServer server(80);
 Preferences prefs;
 volatile bool config_changed = false;
 volatile bool refresh_now = false;
-
-// -------------------- Data Structures (Moved Up for Compiler) --------------------
-struct CountdownItem {
-    String id;
-    String label[4];
-    int year = 0;
-    int month = 0;
-    int day = 0;
-    String repeat = "yearly"; // "yearly" | "once"
-    int birth_year = 0;
-    String accent = "auto"; // "auto" | "red" | "black"
-    bool include_in_cycle = true;
-    String icon = "auto"; // "auto" | "tree" | "reindeer" | "pumpkin" | "ghost" | "cake" | "none"
-};
-struct CountdownSettings {
-    String show_mode = "single"; // "single" | "cycle"
-    String primary_id = "";
-    int cycle_every_n_refreshes = 1;
-};
-
-struct RuntimeConfig {
-    String mode = "parks";
-    String resort = "orlando"; // "orlando" | "tokyo"
-    String parks_tz = "EST5EDT,M3.2.0/2,M11.1.0/2";
-    String countdowns_tz = "EST5EDT,M3.2.0/2,M11.1.0/2";
-    CountdownSettings countdownSettings;
-    std::vector<CountdownItem> countdowns;
-    bool metric = true;
-    bool trip_enabled = true;
-    String trip_date = "2026-12-25";
-    String trip_name = "";
-    int parks[4];
-    int parks_n = 0;
-    int rideIds[4][6];
-    String rideLabels[4][6];
-    String legacyNames[4][6];
-};
-
-enum IconKind { ICON_NONE, ICON_TREE, ICON_REINDEER, ICON_PUMPKIN, ICON_GHOST, ICON_CAKE };
-
 
 // -------------------- Config (JSON) --------------------
 static const char* DEFAULT_CONFIG = R"json({
