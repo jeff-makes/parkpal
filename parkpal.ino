@@ -41,6 +41,15 @@ static bool have_target_bssid = false;
 static uint8_t target_bssid[6] = {0};
 static int32_t target_channel = 0;
 
+struct WiFiCandidate {
+    uint8_t bssid[6];
+    int32_t rssi;
+    int32_t channel;
+};
+static WiFiCandidate wifi_candidates[4];
+static int wifi_candidates_n = 0;
+static int wifi_candidate_idx = 0;
+
 // Setup AP password:
 // - Set to "" for an open (no-password) AP.
 // - Otherwise must be >= 8 chars for WPA2.
@@ -132,8 +141,9 @@ static void scanForSsidIfNeeded(const String& target, bool force = false) {
         return;
     }
 
+    wifi_candidates_n = 0;
+    wifi_candidate_idx = 0;
     bool found = false;
-    int bestRssi = -999;
     for (int i = 0; i < n; i++) {
         if (WiFi.SSID(i) == target) {
             found = true;
@@ -142,29 +152,66 @@ static void scanForSsidIfNeeded(const String& target, bool force = false) {
                        target.c_str(), WiFi.RSSI(i), WiFi.channel(i), enc);
             DBG_PRINTF("WiFi: SSID match auth=%s\n", wifiEncToStr(enc));
 
-            const int rssi = WiFi.RSSI(i);
-            if (rssi > bestRssi) {
-                bestRssi = rssi;
-                target_channel = WiFi.channel(i);
-                const uint8_t* bssid = WiFi.BSSID(i);
-                if (bssid) {
-                    memcpy(target_bssid, bssid, 6);
-                    have_target_bssid = true;
-                } else {
-                    have_target_bssid = false;
+            const uint8_t* bssid = WiFi.BSSID(i);
+            if (!bssid) continue;
+
+            // De-dup by BSSID (common on scans).
+            bool already = false;
+            for (int j = 0; j < wifi_candidates_n; j++) {
+                if (memcmp(wifi_candidates[j].bssid, bssid, 6) == 0) {
+                    already = true;
+                    break;
                 }
+            }
+            if (already) continue;
+
+            if (wifi_candidates_n < (int)(sizeof(wifi_candidates) / sizeof(wifi_candidates[0]))) {
+                memcpy(wifi_candidates[wifi_candidates_n].bssid, bssid, 6);
+                wifi_candidates[wifi_candidates_n].rssi = WiFi.RSSI(i);
+                wifi_candidates[wifi_candidates_n].channel = WiFi.channel(i);
+                wifi_candidates_n++;
+            }
+        }
+    }
+    // Sort by RSSI descending.
+    for (int i = 0; i < wifi_candidates_n; i++) {
+        for (int j = i + 1; j < wifi_candidates_n; j++) {
+            if (wifi_candidates[j].rssi > wifi_candidates[i].rssi) {
+                WiFiCandidate tmp = wifi_candidates[i];
+                wifi_candidates[i] = wifi_candidates[j];
+                wifi_candidates[j] = tmp;
             }
         }
     }
     if (!found) {
         DBG_PRINTF("WiFi: SSID '%s' not found in scan\n", target.c_str());
-    } else if (have_target_bssid && target_channel > 0) {
+        have_target_bssid = false;
+        target_channel = 0;
+        memset(target_bssid, 0, sizeof(target_bssid));
+    } else if (wifi_candidates_n > 0) {
+        memcpy(target_bssid, wifi_candidates[0].bssid, 6);
+        target_channel = wifi_candidates[0].channel;
+        have_target_bssid = (target_channel > 0);
         DBG_PRINTF("WiFi: best BSSID %02X:%02X:%02X:%02X:%02X:%02X ch=%d (RSSI=%d)\n",
                    target_bssid[0], target_bssid[1], target_bssid[2],
                    target_bssid[3], target_bssid[4], target_bssid[5],
-                   (int)target_channel, bestRssi);
+                   (int)target_channel, (int)wifi_candidates[0].rssi);
     }
     WiFi.scanDelete();
+}
+
+static void chooseNextCandidateIfAny() {
+    if (wifi_candidates_n <= 1) return;
+    wifi_candidate_idx = (wifi_candidate_idx + 1) % wifi_candidates_n;
+    memcpy(target_bssid, wifi_candidates[wifi_candidate_idx].bssid, 6);
+    target_channel = wifi_candidates[wifi_candidate_idx].channel;
+    have_target_bssid = (target_channel > 0);
+}
+
+static bool isAuthishReason(uint8_t r) {
+    // Auth/handshake/assoc-ish failures where switching BSSID can help on mesh.
+    return r == 2 /*AUTH_EXPIRE*/ || r == 15 /*4WAY*/ || r == 16 /*GROUP*/ ||
+           r == 202 /*AUTH_FAIL*/ || r == 203 /*ASSOC_FAIL*/ || r == 204 /*HANDSHAKE*/;
 }
 
 static String normApiBaseUrl(String s) {
@@ -511,6 +558,8 @@ static void resetWiFiTarget() {
     memset(target_bssid, 0, sizeof(target_bssid));
     target_channel = 0;
     last_wifi_scan_ms = 0;
+    wifi_candidates_n = 0;
+    wifi_candidate_idx = 0;
 }
 
 static void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
@@ -603,22 +652,44 @@ void connectWiFi() {
     WiFi.setSleep(false);
     // Quick scan first so we can report auth/mode mismatches (WPA3-only, no AP found, etc.).
     scanForSsidIfNeeded(WIFI_SSID, /*force=*/true);
-    if (have_target_bssid && target_channel > 0) {
-        DBG_PRINTF("WiFi: connecting with BSSID lock %02X:%02X:%02X:%02X:%02X:%02X ch=%d\n",
-                   target_bssid[0], target_bssid[1], target_bssid[2],
-                   target_bssid[3], target_bssid[4], target_bssid[5],
-                   (int)target_channel);
-        WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str(), target_channel, target_bssid, true);
-    } else {
-        WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
-    }
-    unsigned long t0 = millis();
-    while (WiFi.status() != WL_CONNECTED && (uint32_t)(millis() - t0) < WIFI_CONNECT_TIMEOUT_MS) delay(200);
-    DBG_PRINTF("WiFi: connect result status=%d (%s)\n", (int)WiFi.status(), wlStatusToStr(WiFi.status()));
-    if (WiFi.status() != WL_CONNECTED) {
+
+    for (int attempt = 0; attempt < 2; attempt++) {
+        if (have_target_bssid && target_channel > 0) {
+            if (!PARKPAL_DEBUG) {
+                Serial.printf("WiFi: trying AP %02X:%02X:%02X:%02X:%02X:%02X ch=%d\n",
+                              target_bssid[0], target_bssid[1], target_bssid[2],
+                              target_bssid[3], target_bssid[4], target_bssid[5],
+                              (int)target_channel);
+            } else {
+                DBG_PRINTF("WiFi: connecting with BSSID lock %02X:%02X:%02X:%02X:%02X:%02X ch=%d\n",
+                           target_bssid[0], target_bssid[1], target_bssid[2],
+                           target_bssid[3], target_bssid[4], target_bssid[5],
+                           (int)target_channel);
+            }
+            WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str(), target_channel, target_bssid, true);
+        } else {
+            WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
+        }
+
+        unsigned long t0 = millis();
+        while (WiFi.status() != WL_CONNECTED && (uint32_t)(millis() - t0) < WIFI_CONNECT_TIMEOUT_MS) delay(200);
+
+        if (WiFi.status() == WL_CONNECTED) {
+            clearJustProvisionedFlag();
+            return;
+        }
+
+        DBG_PRINTF("WiFi: connect result status=%d (%s)\n", (int)WiFi.status(), wlStatusToStr(WiFi.status()));
         DBG_PRINTF("WiFi: last disconnect reason=%u (%s)\n", (unsigned)last_wifi_disconnect_reason, wifiReasonToStr(last_wifi_disconnect_reason));
+
+        // On mesh, a different AP with same SSID can behave differently. Try the next candidate once.
+        if (attempt == 0 && isAuthishReason(last_wifi_disconnect_reason)) {
+            chooseNextCandidateIfAny();
+            delay(200);
+            continue;
+        }
+        break;
     }
-    if (WiFi.status() == WL_CONNECTED) clearJustProvisionedFlag();
 }
 
 bool ensureWiFiConnected(uint32_t timeoutMs = 0) {
@@ -633,6 +704,7 @@ bool ensureWiFiConnected(uint32_t timeoutMs = 0) {
         // If we have a known-good BSSID/channel (common on mesh Wi-Fi), prefer it.
         // Occasionally re-scan to adapt if the user moves the device or APs change.
         scanForSsidIfNeeded(WIFI_SSID, /*force=*/!have_target_bssid);
+        if (isAuthishReason(last_wifi_disconnect_reason)) chooseNextCandidateIfAny();
         if (have_target_bssid && target_channel > 0) {
             WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str(), target_channel, target_bssid, true);
         } else {
