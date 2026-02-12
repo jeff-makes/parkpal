@@ -973,37 +973,6 @@ void drawDegreeMark(int16_t cx, int16_t cy, int16_t outerR, uint16_t color) {
     if (innerR > 0) display.fillCircle(cx, cy, innerR, GxEPD_WHITE);
 }
 
-static const unsigned char* weatherIconBitmap(int code, const String& desc, int16_t& outW, int16_t& outH) {
-    // Default to icon dimensions that match the bitmaps in WeatherIcons.h.
-    // Most icons are 64x32 (256 bytes). ICON_CLOUDY is 64x30 (240 bytes).
-    outW = 64;
-    outH = 32;
-
-    // Prefer OpenWeather condition code if available.
-    if (code >= 200 && code <= 232) return ICON_THUNDERSTORM; // thunderstorm
-    if (code >= 300 && code <= 531) return ICON_RAIN; // drizzle + rain
-    if (code >= 600 && code <= 622) { outH = 30; return ICON_CLOUDY; } // snow (closest we have)
-    if (code >= 701 && code <= 781) { outH = 30; return ICON_CLOUDY; } // mist/fog/etc
-    if (code == 800) return ICON_SUNNY; // clear
-    if (code == 801) return ICON_PARTLY_CLOUDY; // few clouds
-    if (code == 802) return ICON_PARTLY_CLOUDY; // scattered clouds (more "partly" than "overcast")
-    if (code >= 803 && code <= 804) { outH = 30; return ICON_CLOUDY; } // broken/overcast clouds
-
-    // Fallback: map by description text (keeps older Workers working).
-    String d = desc;
-    d.toLowerCase();
-    if (d.indexOf("thunder") >= 0) return ICON_THUNDERSTORM;
-    if (d.indexOf("storm") >= 0) return ICON_THUNDERSTORM;
-    if (d.indexOf("rain") >= 0) return ICON_RAIN;
-    if (d.indexOf("drizzle") >= 0) return ICON_RAIN;
-    if (d.indexOf("snow") >= 0) { outH = 30; return ICON_CLOUDY; }
-    if (d.indexOf("clear") >= 0) return ICON_SUNNY;
-    if (d.indexOf("few clouds") >= 0) return ICON_PARTLY_CLOUDY;
-    if (d.indexOf("scattered") >= 0) return ICON_PARTLY_CLOUDY;
-    if (d.indexOf("cloud") >= 0) { outH = 30; return ICON_CLOUDY; }
-    if (d.indexOf("mist") >= 0 || d.indexOf("fog") >= 0 || d.indexOf("haze") >= 0) { outH = 30; return ICON_CLOUDY; }
-    return ICON_UNKNOWN;
-}
 
 void drawCenterLine(int16_t baselineY, const String& s, const GFXfont* f, uint16_t color) {
     display.setFont(f);
@@ -1157,6 +1126,13 @@ void renderParks(const DynamicJsonDocument& doc, const int rideIds[6], const Str
     int temp = doc["weather"]["temp"] | 0;
     String desc = String(doc["weather"]["desc"] | "—");
     int wcode = doc["weather"]["code"] | 0;
+    long sunrise = doc["weather"]["sunrise"] | 0L;
+    long sunset  = doc["weather"]["sunset"]  | 0L;
+    time_t now;
+    time(&now);
+    bool isNight = false;
+    if (sunrise > 0 && sunset > 0 && now > 1700000000)
+        isNight = (now < (time_t)sunrise || now > (time_t)sunset);
     struct Row {
         String name;
         bool open;
@@ -1198,7 +1174,7 @@ void renderParks(const DynamicJsonDocument& doc, const int rideIds[6], const Str
     int days = 0;
     bool haveTime = false;
     if (showTrip) haveTime = daysToDateInTz(tripISO, parksTz, days);
-    String key = parkName + "|" + temp + "|" + desc + "|" + (showTrip ? String(days) : "-") + "|" + tripName;
+    String key = parkName + "|" + temp + "|" + desc + "|" + (isNight ? "N" : "D") + "|" + (showTrip ? String(days) : "-") + "|" + tripName;
     for (int i = 0; i < count; i++) key += "|" + rows[i].name + "|" + (rows[i].open ? "1" : "0") + "|" + rows[i].wait;
     if (key == parks_lastFrameKey) return;
     parks_lastFrameKey = key;
@@ -1278,14 +1254,12 @@ void renderParks(const DynamicJsonDocument& doc, const int rideIds[6], const Str
         int16_t unitX = degreeCx + degreeR + 4;
         drawText(unitX, currentY, unit, largeNumFont, GxEPD_BLACK);
 
-        // Replace verbose weather text with an icon (cleaner on e-ink).
-        int16_t iconW = 0, iconH = 0;
-        const unsigned char* bmp = weatherIconBitmap(wcode, desc, iconW, iconH);
+        // Weather condition icon (GFX primitives — no bitmaps)
+        int16_t iconW = WEATHER_ICON_W, iconH = WEATHER_ICON_H;
         int16_t iconX = unitX + textWidth(unit, largeNumFont) + 14;
         int16_t iconY = by + (int16_t)max(0, ((int)bh - (int)iconH) / 2);
-        // Keep inside the right margin.
         if (iconX + iconW > (W - M)) iconX = (W - M) - iconW;
-        display.drawBitmap(iconX, iconY, bmp, iconW, iconH, GxEPD_BLACK);
+        drawWeatherIcon(display, iconX, iconY, wcode, desc, GxEPD_BLACK, isNight, GxEPD_WHITE);
         
         // --- Ride List / Setup Instructions ---
         int16_t listHeaderY = dynamicHeaderHeight + 24;

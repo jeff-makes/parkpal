@@ -15,7 +15,14 @@ Supports **Walt Disney World**, **Disneyland Resort**, and **Tokyo Disney Resort
 
 ## No Shared API — You Host Your Own
 
-ParkPal does **not** phone home to someone else's server. You deploy a tiny Cloudflare Worker (free tier is plenty) that fetches ride data and weather on your behalf. Your device talks only to your Worker. No accounts, no tokens, no rate limits to worry about.
+ParkPal does **not** phone home to someone else's server.
+
+Instead, you deploy a tiny **Cloudflare Worker** (free tier is plenty) that acts like your personal “backend”:
+- It fetches ride wait times from Queue‑Times and weather from OpenWeather.
+- It **caches** results so you don’t hammer upstream APIs.
+- It keeps your OpenWeather API key **out of the firmware** (the ESP32 never needs to store it).
+
+Your ParkPal device talks only to *your* Worker URL.
 
 ## How Hard Is This?
 
@@ -30,10 +37,10 @@ ParkPal does **not** phone home to someone else's server. You deploy a tiny Clou
 
 | Part | Notes | Approx. Price |
 |---|---|---|
-| ESP32 e-paper driver board (SPI) | Waveshare universal board or similar | ~$10-15 |
-| 7.5" tri-color e-ink panel (880x528) | Black/white/red, SPI interface | ~$40-55 |
+| ESP32 e-paper driver board (SPI) | Waveshare universal board or similar | ~$20 |
+| 7.5" tri-color e-ink panel (880x528) | Black/white/red, SPI interface | ~$25 |
 | USB-C cable + power supply | Any phone charger works | — |
-| Frame (optional) | IKEA RÖDALM 13x18 cm (5x7 in) | — |
+| Frame | IKEA RÖDALM 13x18 cm (5x7 in) | — |
 
 **Links (what I used):**
 - E‑ink panel (7.5" tri‑color, 880×528): https://www.aliexpress.com/item/1005004369892606.html
@@ -56,6 +63,8 @@ The rest of this README walks through each step.
 
 Each builder deploys their own Worker. It takes about 2 minutes.
 
+**What is Wrangler?** Wrangler is Cloudflare’s command-line tool that uploads this repo’s `worker.js` + `parks.json` to your Cloudflare account and lets you set secrets (like your OpenWeather API key) safely. You *can* paste code into the Cloudflare dashboard editor, but Wrangler is the easiest/least-error-prone way to deploy this project because it’s more than one file.
+
 **Prerequisites:** [Node.js](https://nodejs.org/) installed.
 
 ```bash
@@ -69,7 +78,7 @@ wrangler login
 wrangler deploy
 ```
 
-Wrangler will print your Worker URL — something like `https://parkpal-api.YOUR-SUBDOMAIN.workers.dev`. Copy it; you'll need it during device setup.
+Wrangler will print your Worker URL — something like `https://parkpal-api.YOUR-SUBDOMAIN.workers.dev`. That URL is now live on Cloudflare’s servers. Copy it; you'll need it during device setup.
 
 **Set your OpenWeather API key:**
 
@@ -179,7 +188,7 @@ parkpal/
 ├── parkpal.ino      # ESP32 firmware (Arduino)
 ├── html.h           # Web config UI (served by the ESP32)
 ├── setup_html.h     # Captive portal setup page
-├── WeatherIcons.h   # Bitmap weather icons
+├── WeatherIcons.h   # Weather icons (drawn with GFX primitives)
 ├── worker.js        # Cloudflare Worker (your self-hosted backend)
 ├── parks.json       # Park registry (IDs, coordinates, timezones)
 ├── wrangler.toml    # Wrangler config for the Worker
@@ -205,3 +214,5 @@ MIT. See [LICENSE](LICENSE).
 Disney, Walt Disney World, Disneyland, and related names are trademarks of The Walt Disney Company. This project is not affiliated with or endorsed by Disney.
 
 ParkPal uses third-party data sources ([Queue-Times](https://queue-times.com/) for ride wait times, [OpenWeather](https://openweathermap.org/) for weather). Their availability and terms of service apply.
+
+**Powered by [Queue-Times.com](https://queue-times.com/).** Seriously: huge kudos to them for maintaining the largest public dataset of theme-park wait times in the world.
