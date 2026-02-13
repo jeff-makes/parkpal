@@ -34,7 +34,7 @@ Your ParkPal device talks only to *your* Worker URL.
 | | |
 |---|---|
 | **Soldering** | None. The driver board plugs into the panel via a flat cable. |
-| **Parts** | 2 things to buy (board + panel), plus a USB cable you already own. |
+| **Parts** | 2 things to buy (board + panel), plus a frame if you want. |
 | **Software** | Flash one `.ino`, run two terminal commands for the Worker. |
 | **Time to build** | About an hour if everything goes smoothly. Most of that is waiting for Arduino to compile. |
 
