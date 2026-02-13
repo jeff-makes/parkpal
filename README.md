@@ -8,6 +8,8 @@ A self-contained Disney park dashboard built on an ESP32 and a 7.5" tri-color e-
 
 Supports **Walt Disney World**, **Disneyland Resort**, and **Tokyo Disney Resort**.
 
+Once it's running, the display silently updates every 30 minutes — no app to open, no screen to unlock. Just glance at it.
+
 <!-- TODO: hero photo of the finished device here -->
 <!-- TODO: close-up of the e-ink screen showing wait times -->
 <!-- TODO: screenshot of the web config UI (desktop + mobile) -->
@@ -37,14 +39,16 @@ Your ParkPal device talks only to *your* Worker URL.
 
 | Part | Notes | Approx. Price |
 |---|---|---|
-| ESP32 e-paper driver board (SPI) | Waveshare universal board or similar | ~$20 |
-| 7.5" tri-color e-ink panel (880x528) | Black/white/red, SPI interface | ~$25 |
+| ESP32 e-paper driver board (SPI) | Waveshare universal board or similar | ~$12 |
+| 7.5" tri-color e-ink panel (880x528) | Black/white/red, SPI interface | ~$24 |
 | USB-C cable + power supply | Any phone charger works | — |
-| Frame | IKEA RÖDALM 13x18 cm (5x7 in) | — |
+| Frame | IKEA RÖDALM 13x18 cm (5x7 in) | ~$6 |
+
+**~$42 total** (plus a USB cable you probably already own).
 
 **Links (what I used):**
+- ESP32 e‑paper driver board: https://www.aliexpress.com/item/1005009827197743.html
 - E‑ink panel (7.5" tri‑color, 880×528): https://www.aliexpress.com/item/1005004369892606.html
-- ESP32 e‑paper driver board: https://www.aliexpress.com/item/1005007030138070.html
 - Frame: IKEA RÖDALM 13×18 cm (5×7 in)
 
 The driver board and panel connect via a ribbon cable — no soldering, no breadboard.
@@ -71,7 +75,7 @@ Each builder deploys their own Worker. It takes about 2 minutes.
 # Install the Cloudflare CLI
 npm install -g wrangler
 
-# Log in to your (free) Cloudflare account
+# Log in to your (free) Cloudflare account — sign up at https://cloudflare.com if you don't have one
 wrangler login
 
 # Deploy from this repo root
