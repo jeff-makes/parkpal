@@ -1,14 +1,16 @@
 # ParkPal
 
-A self-contained Disney park dashboard built on an ESP32 and a 7.5" tri-color e-ink display. It sits on your desk (or kitchen counter, or nightstand) and shows:
+A self-contained theme park countdown dashboard built on an ESP32 and a 7.5" tri-color e-ink display. It sits on your desk (or kitchen counter, or nightstand) and shows:
 
 - **Wait times** for your favorite rides, updated every 30 minutes
 - **Live weather** for whichever park you're tracking
-- **Countdown screens** — trip countdowns, birthdays, holidays, with festive icons
+- **Countdown screens** — trip countdowns, birthdays, and holidays.
 
-Supports **Walt Disney World**, **Disneyland Resort**, and **Tokyo Disney Resort**.
+Currently supports **Walt Disney World**, **Disneyland Resort**, and **Tokyo Disney Resort**.
 
 Once it's running, the display silently updates every 30 minutes — no app to open, no screen to unlock. Just glance at it.
+
+![Orlando Countdown](https://github.com/user-attachments/assets/ff8d9776-0fae-4eac-85f4-24725f07bf3e)
 
 <!-- TODO: hero photo of the finished device here -->
 <!-- TODO: close-up of the e-ink screen showing wait times -->
