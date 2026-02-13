@@ -188,7 +188,7 @@ parkpal/
 ├── parkpal.ino      # ESP32 firmware (Arduino)
 ├── html.h           # Web config UI (served by the ESP32)
 ├── setup_html.h     # Captive portal setup page
-├── WeatherIcons.h   # Weather icons (drawn with GFX primitives)
+├── WeatherIcons.h   # Weather icons (1-bit bitmaps, MIT)
 ├── worker.js        # Cloudflare Worker (your self-hosted backend)
 ├── parks.json       # Park registry (IDs, coordinates, timezones)
 ├── wrangler.toml    # Wrangler config for the Worker
@@ -215,4 +215,6 @@ Disney, Walt Disney World, Disneyland, and related names are trademarks of The W
 
 ParkPal uses third-party data sources ([Queue-Times](https://queue-times.com/) for ride wait times, [OpenWeather](https://openweathermap.org/) for weather). Their availability and terms of service apply.
 
-**Powered by [Queue-Times.com](https://queue-times.com/).** Seriously: huge kudos to them for maintaining the largest public dataset of theme-park wait times in the world.
+**Powered by [Queue-Times.com](https://queue-times.com/).** Seriously: huge kudos to them for maintaining one of the largest public datasets of theme-park wait times in the world.
+
+Weather icons are based on Bas Milius’ [weather-icons](https://github.com/basmilius/weather-icons) (MIT). See `third_party/weather-icons.LICENSE.txt`.

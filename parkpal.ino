@@ -285,15 +285,14 @@ static const char* DEFAULT_CONFIG = R"json({
   "units": "imperial",
   "trip_enabled": true,
   "trip_date": "auto",
-  "parks_enabled": [6],
-  "rides_by_park_ids": { "6":[0,0,0,0,0,0] },
-  "rides_by_park_labels": { "6":["","","","","",""] },
+  "trip_name": "My Trip",
+  "parks_enabled": [],
+  "rides_by_park_ids": {},
+  "rides_by_park_labels": {},
   "parks_tz": "EST5EDT,M3.2.0/2,M11.1.0/2",
   "countdowns_tz": "EST5EDT,M3.2.0/2,M11.1.0/2",
-  "countdowns_settings": { "show_mode": "single", "primary_id": "xmas", "cycle_every_n_refreshes": 1 },
-  "countdowns": [
-    { "id": "xmas", "repeat": "yearly", "month": 12, "day": 25, "label": ["CHRISTMAS COUNTDOWN"], "accent": "auto", "include_in_cycle": true, "icon": "auto" }
-  ]
+  "countdowns_settings": { "show_mode": "single", "primary_id": "", "cycle_every_n_refreshes": 1 },
+  "countdowns": []
 })json";
 
 String loadConfigJson() {
@@ -374,6 +373,7 @@ static String parkNameForId(int parkId) {
 }
 
 static String inferTripNameFromParks(const String& resort, const int* parks, int parks_n) {
+    if (parks_n <= 0) return "My Trip";
     if (parks_n == 1 && parks) return parkNameForId(parks[0]);
     if (resort == "tokyo") return "Tokyo Disney";
     if (resort == "california") return "Disneyland";
@@ -546,10 +546,6 @@ bool parseConfig(RuntimeConfig& out) {
     if (!pe.isNull())
         for (JsonVariant v : pe)
             if (out.parks_n < 4) out.parks[out.parks_n++] = (int)v;
-    if (out.parks_n == 0) {
-        out.parks[0] = 6;
-        out.parks_n = 1;
-    }
 
     // If `trip_name` was never set (older configs), seed a stable default.
     // If the user explicitly clears it to blank, keep it blank and infer at render-time.
@@ -1254,12 +1250,18 @@ void renderParks(const DynamicJsonDocument& doc, const int rideIds[6], const Str
         int16_t unitX = degreeCx + degreeR + 4;
         drawText(unitX, currentY, unit, largeNumFont, GxEPD_BLACK);
 
-        // Weather condition icon (GFX primitives — no bitmaps)
+        // Weather condition icon
         int16_t iconW = WEATHER_ICON_W, iconH = WEATHER_ICON_H;
         int16_t iconX = unitX + textWidth(unit, largeNumFont) + 14;
-        int16_t iconY = by + (int16_t)max(0, ((int)bh - (int)iconH) / 2);
+        // Center the icon roughly against the temperature number, even if the icon is taller.
+        int16_t iconY = by - (int16_t)max(0, ((int)iconH - (int)bh) / 2);
         if (iconX + iconW > (W - M)) iconX = (W - M) - iconW;
-        drawWeatherIcon(display, iconX, iconY, wcode, desc, GxEPD_BLACK, isNight, GxEPD_WHITE);
+        if (const uint8_t* bmp = weatherIconBitmap(wcode, desc, isNight)) {
+            display.drawBitmap(iconX, iconY, bmp, iconW, iconH, GxEPD_BLACK);
+        } else {
+            // Unknown: small dash centered in the icon box
+            display.fillRect(iconX + iconW / 2 - 4, iconY + iconH / 2 - 1, 8, 3, GxEPD_BLACK);
+        }
         
         // --- Ride List / Setup Instructions ---
         int16_t listHeaderY = dynamicHeaderHeight + 24;
@@ -1331,6 +1333,29 @@ void renderMessage(const String& msg, const GFXfont* font) {
     do {
         display.fillScreen(GxEPD_WHITE);
         drawCenterLine(display.height() / 2, msg, font, GxEPD_BLACK);
+    } while (display.nextPage());
+}
+
+void renderGetStarted() {
+    display.setFullWindow();
+    display.firstPage();
+    do {
+        display.fillScreen(GxEPD_WHITE);
+        const GFXfont* hFont = &FreeSansBold18pt7b;
+        const GFXfont* tFont = &FreeSans12pt7b;
+        const int16_t h1 = lineHeight(hFont);
+        const int16_t h2 = lineHeight(tFont);
+        const int16_t total = h1 + 10 + (h2 * 3);
+        const int16_t top = BORDER_MARGIN;
+        const int16_t bottom = display.height() - BORDER_MARGIN;
+        int16_t y = top + max<int16_t>(0, (int16_t)((bottom - top - total) / 2)) + h1;
+        drawCenterLine(y, "GET STARTED", hFont, GxEPD_BLACK);
+        y += h1 + 10;
+        drawCenterLine(y, "Open parkpal.local", tFont, GxEPD_RED);
+        y += h2;
+        drawCenterLine(y, "on the same Wi-Fi network", tFont, GxEPD_BLACK);
+        y += h2;
+        drawCenterLine(y, "to set up your trip", tFont, GxEPD_BLACK);
     } while (display.nextPage());
 }
 
@@ -1734,7 +1759,7 @@ void loop() {
         }
         if (RC.mode == "parks") {
             if (RC.parks_n == 0) {
-                renderMessage("No Parks Selected", MSG_FONT);
+                renderGetStarted();
                 return;
             }
             int idx = parkIndex % RC.parks_n;
