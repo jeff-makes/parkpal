@@ -11,6 +11,7 @@ Currently supports **Walt Disney World**, **Disneyland Resort**, and **Tokyo Dis
 Once it's running, the display silently updates every 30 minutes — no app to open, no screen to unlock. Just glance at it.
 
 ![Orlando Countdown](https://github.com/user-attachments/assets/ff8d9776-0fae-4eac-85f4-24725f07bf3e)
+![Christmas Countdown](https://github.com/user-attachments/assets/c9894ae3-15c0-4d6e-b29a-2e270b67f1c5)
 
 <!-- TODO: hero photo of the finished device here -->
 <!-- TODO: close-up of the e-ink screen showing wait times -->
@@ -222,5 +223,7 @@ Disney, Walt Disney World, Disneyland, and related names are trademarks of The W
 ParkPal uses third-party data sources ([Queue-Times](https://queue-times.com/) for ride wait times, [OpenWeather](https://openweathermap.org/) for weather). Their availability and terms of service apply.
 
 **Powered by [Queue-Times.com](https://queue-times.com/).** Seriously: huge kudos to them for maintaining one of the largest public datasets of theme-park wait times in the world.
+
+
 
 Weather icons are based on Bas Milius’ [weather-icons](https://github.com/basmilius/weather-icons) (MIT). See `third_party/weather-icons.LICENSE.txt`.
